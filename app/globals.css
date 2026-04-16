@@ -1,0 +1,101 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 8%;
+    --foreground: 213 31% 91%;
+
+    --card: 222 47% 11%;
+    --card-foreground: 213 31% 91%;
+
+    --border: 216 34% 17%;
+
+    --primary: 210 100% 56%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 222 47% 15%;
+    --secondary-foreground: 213 31% 91%;
+
+    --muted: 223 47% 14%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 210 100% 56%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-card border border-border rounded-xl p-4;
+  }
+
+  .btn-primary {
+    @apply bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium
+           hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-secondary text-secondary-foreground px-4 py-2 rounded-lg font-medium
+           hover:bg-muted transition-colors;
+  }
+
+  .btn-ghost {
+    @apply px-4 py-2 rounded-lg font-medium hover:bg-secondary transition-colors;
+  }
+
+  .btn-danger {
+    @apply bg-destructive text-destructive-foreground px-4 py-2 rounded-lg font-medium
+           hover:opacity-90 transition-opacity;
+  }
+
+  .input {
+    @apply bg-secondary border border-border rounded-lg px-3 py-2 text-sm
+           focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent
+           placeholder:text-muted-foreground w-full;
+  }
+
+  .label {
+    @apply text-sm font-medium text-muted-foreground mb-1 block;
+  }
+
+  .tag-win {
+    @apply text-green-500 bg-green-500/10 px-2 py-0.5 rounded-md text-xs font-medium;
+  }
+
+  .tag-loss {
+    @apply text-red-500 bg-red-500/10 px-2 py-0.5 rounded-md text-xs font-medium;
+  }
+
+  .tag-neutral {
+    @apply text-muted-foreground bg-muted px-2 py-0.5 rounded-md text-xs font-medium;
+  }
+}
