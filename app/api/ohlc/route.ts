@@ -8,6 +8,9 @@ import type { OHLCCandle } from '@/types';
 // ─── In-memory cache (generated once, never regenerated per process) ──────────
 const cache = new Map<string, OHLCCandle[]>();
 
+// Set to true to re-enable synthetic 5M/1M generation for non-crypto assets
+const ENABLE_SYNTHETIC = false;
+
 const DATA_DIR = join(process.cwd(), 'public', 'data');
 
 // Assets with real intraday CSV data (1m, 5m)
@@ -88,12 +91,24 @@ export async function GET(request: NextRequest) {
       cache.set(key, real);
       return NextResponse.json(real);
     }
-    // No CSV available — fall through to synthetic generation below
+    // No CSV — fall through to synthetic (if enabled) or return error
+    if (!ENABLE_SYNTHETIC) {
+      return NextResponse.json(
+        { error: `No real ${timeframe} data available for ${asset}. Add ${asset}_${suffix}.csv or enable synthetic.` },
+        { status: 404 }
+      );
+    }
     console.log(`[OHLC] No real ${timeframe} CSV for ${asset} — generating synthetic from 15M`);
   }
 
   // ── NON-CRYPTO (and crypto fallback): 1M / 5M → generate from 15M ─────────
   if (SYNTHETIC_TIMEFRAMES.has(timeframe)) {
+    if (!ENABLE_SYNTHETIC) {
+      return NextResponse.json(
+        { error: `${asset} ${timeframe}: no real data available. Synthetic generation is currently disabled.` },
+        { status: 404 }
+      );
+    }
     const base15key = `${asset}_15M`;
 
     let base15: OHLCCandle[] | null = cache.get(base15key) ?? null;
