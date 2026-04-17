@@ -69,6 +69,8 @@ export async function GET(request: NextRequest) {
     }
 
     const synthetic = generateSyntheticCandles(base15, timeframe as '1M' | '5M');
+    console.log(`Base candles (15M ${asset}):`, base15.length);
+    console.log(`Generated candles (${timeframe} ${asset}):`, synthetic.length);
     cache.set(key, synthetic);
     return NextResponse.json(synthetic);
   }

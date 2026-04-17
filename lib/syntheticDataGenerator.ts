@@ -55,8 +55,8 @@ export function generateSyntheticCandles(
   baseData: OHLCCandle[],
   targetTimeframe: '1M' | '5M',
 ): OHLCCandle[] {
-  const subCount   = targetTimeframe === '1M' ? 15 : 3;
-  const subSeconds = targetTimeframe === '1M' ? 60 : 300;
+  const subCount = targetTimeframe === '1M' ? 15 : 3;
+  const fallbackParentSeconds = 900; // 15 min in seconds
 
   // Data-age limits
   const nowSec  = Date.now() / 1000;
@@ -69,11 +69,16 @@ export function generateSyntheticCandles(
 
   const result: OHLCCandle[] = [];
 
-  for (const candle of source) {
+  for (let idx = 0; idx < source.length; idx++) {
+    const candle  = source[idx];
     const ts      = candle.time as number;
     const { open, high, low, close, volume } = candle;
     const bullish = close >= open;
     const range   = high - low;
+
+    // Use actual gap to the next parent candle so sub-candle timestamps never overlap
+    const nextTs  = idx + 1 < source.length ? (source[idx + 1].time as number) : ts + fallbackParentSeconds;
+    const step    = Math.max(1, Math.floor((nextTs - ts) / subCount));
 
     const rng       = createRng(ts);
     const waypoints = generatePath(rng, open, close, low, high, subCount, bullish);
@@ -93,7 +98,7 @@ export function generateSyntheticCandles(
       const l          = Math.max(low, minOC - wiggleDown);
 
       result.push({
-        time:   ts + i * subSeconds,
+        time:   ts + i * step,
         open:   o,
         high:   h,
         low:    l,
