@@ -35,7 +35,7 @@ export default function JournalPage() {
         <TradeTable
           trades={trades}
           isAdmin={isAdmin}
-          onDelete={isAdmin ? undefined : deleteTrade}
+          onDelete={deleteTrade}
         />
       )}
     </div>
