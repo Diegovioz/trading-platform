@@ -8,7 +8,9 @@ export const INITIAL_BALANCE = 100_000;
 export const MONTHLY_TRADE_LIMIT = 10;
 
 export const ASSETS = ['NQ', 'BTC', 'ETH', 'XAUUSD', 'NVDA', 'SOFI', 'TSLA'] as const;
-export const TIMEFRAMES = ['1D', '4H', '1H', '15M', '5M'] as const;
+export const TIMEFRAMES = ['1D', '4H', '1H', '15M', '5M', '1M'] as const;
+
+export const SYNTHETIC_TIMEFRAMES = new Set(['1M', '5M']);
 
 export const SPEED_OPTIONS = [
   { label: '0.5x', ms: 1600, step: 1 },
@@ -137,13 +139,15 @@ export function useBacktest() {
 
           // If the requested start date is before all available data, warn and start from the beginning
           if (fromTs < firstTs) {
-            const firstDate = new Date(firstTs * 1000).toISOString().split('T')[0];
-            setError(
-              `⚠️ ${asset} ${timeframe} data only starts on ${firstDate}. ` +
-              `Run scripts/download_data.py to refresh. Starting from first available candle.`
-            );
-            // Clear the error after 6s so the chart is still usable
-            setTimeout(() => setError(null), 6000);
+            // For synthetic timeframes don't show an error — just start from beginning
+            if (!SYNTHETIC_TIMEFRAMES.has(timeframe)) {
+              const firstDate = new Date(firstTs * 1000).toISOString().split('T')[0];
+              setError(
+                `⚠️ ${asset} ${timeframe} data only starts on ${firstDate}. ` +
+                `Run scripts/download_data.py to refresh. Starting from first available candle.`
+              );
+              setTimeout(() => setError(null), 6000);
+            }
             idx = 0;
           } else {
             const found = data.findIndex(c => (c.time as number) >= fromTs);
@@ -379,5 +383,6 @@ export function useBacktest() {
     initialBalance: INITIAL_BALANCE,
     savedThisMonth,
     monthlyLimit: MONTHLY_TRADE_LIMIT,
+    isSynthetic: SYNTHETIC_TIMEFRAMES.has(timeframe),
   };
 }
