@@ -10,6 +10,8 @@ export const MONTHLY_TRADE_LIMIT = 10;
 export const ASSETS = ['NQ', 'BTC', 'ETH', 'XAUUSD', 'NVDA', 'SOFI', 'TSLA'] as const;
 export const TIMEFRAMES = ['1D', '4H', '1H', '15M', '5M', '1M'] as const;
 
+// Crypto assets have real 1M/5M CSV data — no synthetic generation
+export const CRYPTO_ASSETS     = new Set(['BTC', 'ETH']);
 export const SYNTHETIC_TIMEFRAMES = new Set(['1M', '5M']);
 
 export const SPEED_OPTIONS = [
@@ -425,6 +427,7 @@ export function useBacktest() {
     initialBalance: INITIAL_BALANCE,
     savedThisMonth,
     monthlyLimit: MONTHLY_TRADE_LIMIT,
-    isSynthetic: SYNTHETIC_TIMEFRAMES.has(timeframe),
+    // True only for non-crypto 1M/5M (generated from 15M)
+    isSynthetic: SYNTHETIC_TIMEFRAMES.has(timeframe) && !CRYPTO_ASSETS.has(asset),
   };
 }

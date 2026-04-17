@@ -5,22 +5,28 @@ import { parse } from 'csv-parse/sync';
 import { generateSyntheticCandles } from '@/lib/syntheticDataGenerator';
 import type { OHLCCandle } from '@/types';
 
-// ─── In-memory cache ──────────────────────────────────────────────────────────
+// ─── In-memory cache (generated once, never regenerated per process) ──────────
 const cache = new Map<string, OHLCCandle[]>();
 
 const DATA_DIR = join(process.cwd(), 'public', 'data');
+
+// Assets with real intraday CSV data (1m, 5m)
+const CRYPTO_ASSETS = new Set(['BTC', 'ETH']);
+
+// Non-crypto 1M/5M are generated from 15M base data
+const SYNTHETIC_TIMEFRAMES = new Set(['1M', '5M']);
 
 const TIMEFRAME_FILE: Record<string, string> = {
   '1D':  '1d',
   '4H':  '4h',
   '1H':  '1h',
   '15M': '15m',
+  '5M':  '5m',  // real data for crypto; synthetic for others
+  '1M':  '1m',  // real data for crypto; synthetic for others
 };
 
-// 1M and 5M are always synthetic — never read their CSV files
-const SYNTHETIC_TIMEFRAMES = new Set(['1M', '5M']);
-
-function readCsvCandles(asset: string, suffix: string): OHLCCandle[] | null {
+// ─── CSV helpers ─────────────────────────────────────────────────────────────
+function readIntradayCsv(asset: string, suffix: string): OHLCCandle[] | null {
   const filePath = join(DATA_DIR, `${asset}_${suffix}.csv`);
   if (!existsSync(filePath)) return null;
 
@@ -37,6 +43,24 @@ function readCsvCandles(asset: string, suffix: string): OHLCCandle[] | null {
   }));
 }
 
+function readDailyCsv(asset: string): OHLCCandle[] | null {
+  const filePath = join(DATA_DIR, `${asset}_1d.csv`);
+  if (!existsSync(filePath)) return null;
+
+  const raw  = readFileSync(filePath, 'utf8');
+  const rows = parse(raw, { columns: true, skip_empty_lines: true, cast: true });
+
+  return rows.map((r: Record<string, unknown>) => ({
+    time:   String(r.date),
+    open:   Number(r.open),
+    high:   Number(r.high),
+    low:    Number(r.low),
+    close:  Number(r.close),
+    volume: Number(r.volume ?? 0),
+  }));
+}
+
+// ─── Route ────────────────────────────────────────────────────────────────────
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const asset     = searchParams.get('asset')?.toUpperCase();
@@ -51,17 +75,33 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(cache.get(key));
   }
 
-  // ─── Synthetic path for 1M / 5M ───────────────────────────────────────────
+  const suffix = TIMEFRAME_FILE[timeframe];
+  if (!suffix) {
+    return NextResponse.json({ error: `Unknown timeframe: ${timeframe}` }, { status: 400 });
+  }
+
+  // ── CRYPTO: 1M / 5M → try real CSV first ─────────────────────────────────
+  if (SYNTHETIC_TIMEFRAMES.has(timeframe) && CRYPTO_ASSETS.has(asset)) {
+    const real = readIntradayCsv(asset, suffix);
+    if (real && real.length > 0) {
+      console.log(`[OHLC] Real ${timeframe} data for ${asset}: ${real.length} candles`);
+      cache.set(key, real);
+      return NextResponse.json(real);
+    }
+    // No CSV available — fall through to synthetic generation below
+    console.log(`[OHLC] No real ${timeframe} CSV for ${asset} — generating synthetic from 15M`);
+  }
+
+  // ── NON-CRYPTO (and crypto fallback): 1M / 5M → generate from 15M ─────────
   if (SYNTHETIC_TIMEFRAMES.has(timeframe)) {
     const base15key = `${asset}_15M`;
 
-    // Load 15M base data (from cache or disk)
     let base15: OHLCCandle[] | null = cache.get(base15key) ?? null;
     if (!base15) {
-      base15 = readCsvCandles(asset, '15m');
+      base15 = readIntradayCsv(asset, '15m');
       if (!base15 || base15.length === 0) {
         return NextResponse.json(
-          { error: `No 15M base data found for ${asset}. Cannot generate synthetic ${timeframe} data.` },
+          { error: `No 15M base data found for ${asset}. Cannot generate ${timeframe} data.` },
           { status: 404 }
         );
       }
@@ -69,52 +109,35 @@ export async function GET(request: NextRequest) {
     }
 
     const synthetic = generateSyntheticCandles(base15, timeframe as '1M' | '5M');
-    console.log(`Base candles (15M ${asset}):`, base15.length);
-    console.log(`Generated candles (${timeframe} ${asset}):`, synthetic.length);
+    if (!synthetic || synthetic.length === 0) {
+      return NextResponse.json(
+        { error: `Synthetic data generation failed for ${asset} ${timeframe}.` },
+        { status: 500 }
+      );
+    }
+
+    console.log(`[OHLC] Synthetic ${timeframe} for ${asset}: ${base15.length} base → ${synthetic.length} candles`);
     cache.set(key, synthetic);
     return NextResponse.json(synthetic);
   }
 
-  // ─── Real data path (15M and above) ───────────────────────────────────────
-  const suffix = TIMEFRAME_FILE[timeframe];
-  if (!suffix) {
-    return NextResponse.json({ error: `Unknown timeframe: ${timeframe}` }, { status: 400 });
+  // ── REAL DATA: 1D / 4H / 1H / 15M ───────────────────────────────────────
+  if (timeframe === '1D') {
+    const candles = readDailyCsv(asset);
+    if (!candles || candles.length === 0) {
+      return NextResponse.json({ error: `No data file found for ${asset} 1D.` }, { status: 404 });
+    }
+    cache.set(key, candles);
+    return NextResponse.json(candles);
   }
 
-  const filePath = join(DATA_DIR, `${asset}_${suffix}.csv`);
-  if (!existsSync(filePath)) {
+  const candles = readIntradayCsv(asset, suffix);
+  if (!candles || candles.length === 0) {
     return NextResponse.json(
       { error: `No data file found for ${asset} ${timeframe}.` },
       { status: 404 }
     );
   }
-
-  const raw  = readFileSync(filePath, 'utf8');
-  const rows = parse(raw, { columns: true, skip_empty_lines: true, cast: true });
-
-  const isIntraday = timeframe !== '1D';
-
-  const candles: OHLCCandle[] = rows.map((r: Record<string, unknown>) => {
-    if (isIntraday) {
-      return {
-        time:   Number(r.timestamp),
-        open:   Number(r.open),
-        high:   Number(r.high),
-        low:    Number(r.low),
-        close:  Number(r.close),
-        volume: Number(r.volume ?? 0),
-      };
-    } else {
-      return {
-        time:   String(r.date),
-        open:   Number(r.open),
-        high:   Number(r.high),
-        low:    Number(r.low),
-        close:  Number(r.close),
-        volume: Number(r.volume ?? 0),
-      };
-    }
-  });
 
   cache.set(key, candles);
   return NextResponse.json(candles);

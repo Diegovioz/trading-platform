@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
-import { useBacktest, ASSETS, TIMEFRAMES, SPEED_OPTIONS } from '@/hooks/useBacktest';
+import { useBacktest, ASSETS, TIMEFRAMES, SPEED_OPTIONS, CRYPTO_ASSETS, SYNTHETIC_TIMEFRAMES } from '@/hooks/useBacktest';
 import { formatCurrency, formatPrice, pnlColor } from '@/lib/utils';
 import type { ClosedTrade } from '@/types';
 import type { DrawingTool } from '@/components/backtesting/BacktestChart';
@@ -84,14 +84,23 @@ export default function BacktestingPage() {
           {bt.loading ? 'Loading…' : bt.sessionActive ? 'Reload' : 'Start'}
         </button>
 
-        {/* Synthetic data badge */}
-        {bt.isSynthetic && bt.sessionActive && (
-          <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            Simulated Data
-          </span>
+        {/* Data source badge */}
+        {bt.sessionActive && SYNTHETIC_TIMEFRAMES.has(bt.timeframe) && (
+          bt.isSynthetic ? (
+            <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Simulated Lower Timeframe
+            </span>
+          ) : CRYPTO_ASSETS.has(bt.asset) ? (
+            <span className="flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-green-500/10 text-green-500 border border-green-500/20">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Real Market Data
+            </span>
+          ) : null
         )}
 
         <div className="h-5 w-px bg-border mx-1" />
