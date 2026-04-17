@@ -22,9 +22,9 @@ interface Filters {
 const EMPTY_FILTERS: Filters = { from: '', to: '', asset: '', direction: '' };
 
 export default function DashboardPage() {
-  const { profile } = useProfile();
+  const { profile, isAdmin } = useProfile();
   const { accounts, loading: accLoading, createAccount, renameAccount, deleteAccount } = useAccounts();
-  const { trades, loading: tradesLoading } = useTrades();
+  const { trades, loading: tradesLoading } = useTrades({ isAdmin });
 
   const [selectedAccount, setSelectedAccount] = useState<string>('all');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);

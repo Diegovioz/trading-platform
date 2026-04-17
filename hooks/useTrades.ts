@@ -24,7 +24,13 @@ export function useTrades({ isAdmin = false }: UseTradesOptions = {}) {
       .select('*, profile:profiles(full_name, email)')
       .order('trade_date', { ascending: false });
 
-    // Admin sees all (RLS allows it); trader sees only their own (RLS enforces it)
+    // Si no es admin, filtrar solo los trades del usuario actual
+    if (!isAdmin) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setLoading(false); return; }
+      query = query.eq('user_id', user.id);
+    }
+
     const { data, error } = await query;
 
     if (error) {
