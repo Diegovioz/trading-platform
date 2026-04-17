@@ -99,7 +99,10 @@ export default function BacktestingPage() {
         {/* Playback controls */}
         <div className="flex items-center gap-2">
           <button
-            onClick={() => bt.setIsPlaying(p => !p)}
+            onClick={() => {
+              console.log('[Backtest] PLAY clicked | isPlaying:', bt.isPlaying, '| data.length:', bt.allCandles.length);
+              bt.setIsPlaying((p: boolean) => !p);
+            }}
             disabled={!bt.sessionActive || bt.isAtEnd}
             className="btn-secondary text-sm py-1.5 px-3"
             title={bt.isPlaying ? 'Pause' : 'Play'}

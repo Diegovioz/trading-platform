@@ -184,37 +184,49 @@ export function useBacktest() {
 
   // ─── Replay tick ───────────────────────────────────────────────────────────
   useEffect(() => {
+    console.log('[Backtest] isPlaying:', isPlaying, '| currentIndex:', currentIndex, '| data.length:', allCandlesRef.current.length);
     if (!isPlaying) return;
+
     const { ms, step } = SPEED_OPTIONS[speedIdx] ?? SPEED_OPTIONS[1];
 
-    const tick = () => {
-      setCurrentIndex(prev => {
+    const id = setInterval(() => {
+      try {
         const candles = allCandlesRef.current;
-        if (prev >= candles.length - 1) { setIsPlaying(false); return prev; }
+        setCurrentIndex((prev: number) => {
+          if (prev >= candles.length - 1) return prev;
 
-        const next = Math.min(prev + step, candles.length - 1);
-        let currentOpen = openTradesRef.current;
-        let allClosed: ClosedTrade[] = [];
+          const next = Math.min(prev + step, candles.length - 1);
+          let currentOpen = openTradesRef.current;
+          let allClosed: ClosedTrade[] = [];
 
-        for (let i = prev + 1; i <= next; i++) {
-          const { stillOpen, newlyClosed } = checkSlTp(candles[i], currentOpen);
-          currentOpen = stillOpen;
-          allClosed   = allClosed.concat(newlyClosed);
-        }
+          for (let i = prev + 1; i <= next; i++) {
+            const { stillOpen, newlyClosed } = checkSlTp(candles[i], currentOpen);
+            currentOpen = stillOpen;
+            allClosed   = allClosed.concat(newlyClosed);
+          }
 
-        if (allClosed.length > 0) {
-          openTradesRef.current = currentOpen;
-          setClosedTrades(c => [...c, ...allClosed]);
-          setOpenTrades(currentOpen);
-        }
+          if (allClosed.length > 0) {
+            openTradesRef.current = currentOpen;
+            setClosedTrades((c: ClosedTrade[]) => [...c, ...allClosed]);
+            setOpenTrades(currentOpen);
+          }
 
-        return next;
-      });
-    };
+          return next;
+        });
+      } catch (e) {
+        console.error('[Backtest] Tick error:', e);
+      }
+    }, ms);
 
-    const id = setInterval(tick, ms);
     return () => clearInterval(id);
   }, [isPlaying, speedIdx]);
+
+  // Auto-stop when playback reaches the last candle
+  useEffect(() => {
+    if (isPlaying && allCandles.length > 0 && currentIndex >= allCandles.length - 1) {
+      setIsPlaying(false);
+    }
+  }, [currentIndex, allCandles.length, isPlaying]);
 
   // ─── Step forward ──────────────────────────────────────────────────────────
   const stepForward = useCallback(() => {
