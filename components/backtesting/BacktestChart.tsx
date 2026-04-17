@@ -303,16 +303,24 @@ export default function BacktestChart({
   }, []);
 
   // ── Update candles ────────────────────────────────────────────────────────────
+  // How many candles to pre-load as initial context on first render
+  const INITIAL_CONTEXT = 80;
+
   useEffect(() => {
     const series = seriesRef.current;
     const chart  = chartRef.current;
     if (!chartReady || !series || !chart || !allCandles.length) return;
 
-    const sliced = allCandles.slice(0, currentIndex + 1) as Parameters<typeof series.setData>[0];
     if (currentIndex === startIndex) {
-      series.setData(sliced);
+      // Initial load or reset: show a context window so the chart isn't just 1 candle
+      const contextEnd = Math.min(startIndex + INITIAL_CONTEXT, allCandles.length - 1);
+      const initialData = allCandles.slice(0, contextEnd + 1) as Parameters<typeof series.setData>[0];
+      console.log('[BacktestChart] setData:', initialData.length, 'candles (startIndex=' + startIndex + ', contextEnd=' + contextEnd + ')');
+      series.setData(initialData);
       chart.timeScale().fitContent();
     } else {
+      // Incremental advance: append the latest candle
+      const sliced = allCandles.slice(0, currentIndex + 1);
       series.update(sliced[sliced.length - 1] as Parameters<typeof series.update>[0]);
       chart.timeScale().scrollToPosition(0, false);
     }
