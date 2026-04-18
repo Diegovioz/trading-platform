@@ -15,62 +15,40 @@ export function generateSyntheticCandles(
   baseData: OHLCCandle[],
   targetTimeframe: '1M' | '5M',
 ): OHLCCandle[] {
-  const subCount = targetTimeframe === '1M' ? 15 : 3;
-  const fallbackParentSeconds = 900; // 15 min
-
-  // Data-age limits: only use recent candles so data stays realistic
-  const nowSec  = Date.now() / 1000;
-  const maxDays = targetTimeframe === '1M' ? 30 : 90;
-  const cutoff  = nowSec - maxDays * 86400;
-
-  let source = baseData.filter(c => (c.time as number) >= cutoff);
-  if (source.length === 0) source = baseData.slice(-500);
+  const subCount    = targetTimeframe === '1M' ? 15 : 3;
+  const stepSeconds = targetTimeframe === '1M' ? 60 : 300; // fixed step per sub-candle
 
   const result: OHLCCandle[] = [];
 
-  for (let idx = 0; idx < source.length; idx++) {
-    const parent  = source[idx];
-    const ts      = parent.time as number;
+  for (let idx = 0; idx < baseData.length; idx++) {
+    const parent = baseData[idx];
+    const ts     = parent.time as number;
     const { open, high, low, close, volume } = parent;
-    const range   = high - low;
-
-    // Timestamp step: use actual gap to next candle, never fixed — prevents collisions
-    const nextTs = idx + 1 < source.length
-      ? (source[idx + 1].time as number)
-      : ts + fallbackParentSeconds;
-    const step = Math.max(1, Math.floor((nextTs - ts) / subCount));
+    const range  = high - low;
 
     const rng = createRng(ts);
-
-    // Build sub-candles one by one
-    let prevClose = open; // first sub-candle opens at the parent open
+    let prevClose = open; // first sub-candle opens at parent open
 
     for (let i = 0; i < subCount; i++) {
-      const isLast   = i === subCount - 1;
-      const subOpen  = prevClose; // continuity: each candle opens where the previous closed
+      const isLast = i === subCount - 1;
 
-      // Anchor close to the linear path open→close, add tiny noise
-      let subClose: number;
-      if (isLast) {
-        subClose = close; // last sub-candle MUST close at parent close
-      } else {
-        const progress = (i + 1) / subCount;
-        const base     = open + (close - open) * progress;
-        const noise    = range * 0.02 * (rng() * 2 - 1); // ±2% of range
-        subClose = Math.min(high, Math.max(low, base + noise));
-      }
+      // Linear progress through parent candle
+      const progress  = i / subCount;
+      const basePrice = open + (close - open) * progress;
 
-      // Wick: extend slightly beyond body, hard-clamped inside parent range
-      const bodyHigh = Math.max(subOpen, subClose);
-      const bodyLow  = Math.min(subOpen, subClose);
-      const wickUp   = range > 1e-10 ? rng() * range * 0.03 : 0; // up to 3% of range
-      const wickDown = range > 1e-10 ? rng() * range * 0.03 : 0;
+      // Deterministic noise: ±1% of range
+      const noise     = range * 0.01 * (rng() * 2 - 1);
+      let   price     = isLast ? close : Math.min(high, Math.max(low, basePrice + noise));
 
-      const subHigh = Math.min(high, bodyHigh + wickUp);
-      const subLow  = Math.max(low,  bodyLow  - wickDown);
+      const subOpen  = prevClose;
+      const subClose = price;
+
+      // High/low strictly clamped inside parent range
+      const subHigh = Math.min(high, Math.max(subOpen, subClose));
+      const subLow  = Math.max(low,  Math.min(subOpen, subClose));
 
       result.push({
-        time:   ts + i * step,
+        time:   ts + i * stepSeconds,
         open:   subOpen,
         high:   subHigh,
         low:    subLow,

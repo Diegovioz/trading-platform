@@ -5,104 +5,104 @@ import { parse } from 'csv-parse/sync';
 import { generateSyntheticCandles } from '@/lib/syntheticDataGenerator';
 import type { OHLCCandle } from '@/types';
 
-// ─── In-memory cache (generated once, never regenerated per process) ──────────
+// ─── In-memory cache ──────────────────────────────────────────────────────────
 const cache = new Map<string, OHLCCandle[]>();
 
-// Set to true to re-enable synthetic 5M/1M generation for non-crypto assets
-const ENABLE_SYNTHETIC = false;
-
 const DATA_DIR = join(process.cwd(), 'public', 'data');
-
 const CRYPTO_ASSETS = new Set(['BTC', 'ETH']);
 const SYNTHETIC_TIMEFRAMES = new Set(['1M', '5M']);
 
-// Higher timeframes derived from M15 — bucket size in seconds
-const DERIVED_BUCKET_SECONDS: Record<string, number> = {
-  '1H': 3_600,
-  '4H': 14_400,
-  '1D': 86_400,
+// Count-based grouping from M15 (4×15=60min, 16×15=240min, 96×15=1440min)
+const M15_GROUP_SIZE: Record<string, number> = {
+  '1H': 4,
+  '4H': 16,
+  '1D': 96,
 };
 
-// ─── CSV helpers ─────────────────────────────────────────────────────────────
-function readIntradayCsv(asset: string, suffix: string): OHLCCandle[] | null {
+// ─── M15 CSV loader with full validation ──────────────────────────────────────
+function loadM15(asset: string): OHLCCandle[] | null {
+  const filePath = join(DATA_DIR, `${asset}_15m.csv`);
+  if (!existsSync(filePath)) return null;
+
+  const raw  = readFileSync(filePath, 'utf8');
+  const rows = parse(raw, { columns: true, skip_empty_lines: true, cast: true });
+
+  const nowSeconds = Date.now() / 1000;
+  const candles: OHLCCandle[] = [];
+
+  for (const r of rows) {
+    let ts = Number(r.timestamp);
+    if (isNaN(ts)) continue;
+    // Handle millisecond timestamps (13+ digits) — convert to seconds
+    if (ts > 1e12) ts = Math.floor(ts / 1000);
+    // Discard future timestamps
+    if (ts > nowSeconds) continue;
+
+    const o = Number(r.open);
+    const h = Number(r.high);
+    const l = Number(r.low);
+    const c = Number(r.close);
+    if (isNaN(o) || isNaN(h) || isNaN(l) || isNaN(c)) continue;
+
+    candles.push({ time: ts, open: o, high: h, low: l, close: c, volume: Number(r.volume ?? 0) });
+  }
+
+  // Sort ascending
+  candles.sort((a, b) => (a.time as number) - (b.time as number));
+
+  // Trim to first candle aligned to a 15-min boundary (minutes: 0, 15, 30, 45)
+  const firstAligned = candles.findIndex(c => {
+    const minutes = Math.floor((c.time as number) % 3600 / 60);
+    return minutes === 0 || minutes === 15 || minutes === 30 || minutes === 45;
+  });
+  const aligned = firstAligned >= 0 ? candles.slice(firstAligned) : candles;
+
+  if (aligned.length === 0) return null;
+
+  console.log(`[OHLC] ${asset} M15 FIRST DATE: ${new Date((aligned[0].time as number) * 1000).toISOString()} | ${aligned.length} candles`);
+  return aligned;
+}
+
+// ─── Count-based aggregation ──────────────────────────────────────────────────
+function aggregateByCount(base: OHLCCandle[], groupSize: number): OHLCCandle[] {
+  const result: OHLCCandle[] = [];
+  // Only include complete groups
+  const completeEnd = Math.floor(base.length / groupSize) * groupSize;
+
+  for (let i = 0; i < completeEnd; i += groupSize) {
+    const group = base.slice(i, i + groupSize);
+    result.push({
+      time:   group[0].time,
+      open:   group[0].open,
+      high:   Math.max(...group.map(c => c.high)),
+      low:    Math.min(...group.map(c => c.low)),
+      close:  group[group.length - 1].close,
+      volume: group.reduce((sum, c) => sum + (c.volume ?? 0), 0),
+    });
+  }
+  return result;
+}
+
+// ─── Real CSV reader for crypto 1M/5M ────────────────────────────────────────
+function readCryptoIntraday(asset: string, suffix: string): OHLCCandle[] | null {
   const filePath = join(DATA_DIR, `${asset}_${suffix}.csv`);
   if (!existsSync(filePath)) return null;
 
   const raw  = readFileSync(filePath, 'utf8');
   const rows = parse(raw, { columns: true, skip_empty_lines: true, cast: true });
 
-  return rows.map((r: Record<string, unknown>) => ({
-    time:   Number(r.timestamp),
-    open:   Number(r.open),
-    high:   Number(r.high),
-    low:    Number(r.low),
-    close:  Number(r.close),
-    volume: Number(r.volume ?? 0),
-  }));
-}
+  const nowSeconds = Date.now() / 1000;
+  const candles: OHLCCandle[] = rows
+    .map((r: Record<string, unknown>) => {
+      let ts = Number(r.timestamp);
+      if (isNaN(ts)) return null;
+      if (ts > 1e12) ts = Math.floor(ts / 1000);
+      if (ts > nowSeconds) return null;
+      return { time: ts, open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close), volume: Number(r.volume ?? 0) };
+    })
+    .filter(Boolean) as OHLCCandle[];
 
-// ─── Aggregation ─────────────────────────────────────────────────────────────
-/**
- * Aggregate M15 candles into larger time buckets using time-based alignment.
- * Each output candle represents one complete bucket (hour, 4h, day).
- */
-function aggregateByBucket(base: OHLCCandle[], bucketSeconds: number): OHLCCandle[] {
-  if (base.length === 0) return [];
-
-  const result: OHLCCandle[] = [];
-  let bucketStart = -1;
-  let open = 0, high = 0, low = Infinity, close = 0, volume = 0;
-  let count = 0;
-
-  for (const c of base) {
-    const ts = c.time as number;
-    const bucket = Math.floor(ts / bucketSeconds) * bucketSeconds;
-
-    if (bucket !== bucketStart) {
-      // Flush previous bucket
-      if (count > 0) {
-        result.push({ time: bucketStart, open, high, low, close, volume });
-      }
-      // Start new bucket
-      bucketStart = bucket;
-      open   = c.open;
-      high   = c.high;
-      low    = c.low;
-      close  = c.close;
-      volume = c.volume ?? 0;
-      count  = 1;
-    } else {
-      high   = Math.max(high, c.high);
-      low    = Math.min(low,  c.low);
-      close  = c.close;
-      volume += c.volume ?? 0;
-      count++;
-    }
-  }
-
-  // Flush last bucket
-  if (count > 0) {
-    result.push({ time: bucketStart, open, high, low, close, volume });
-  }
-
-  return result;
-}
-
-function validateAggregation(base: OHLCCandle[], derived: OHLCCandle[], label: string): void {
-  let missingCount = 0;
-
-  for (const d of derived) {
-    if (d.high < d.open || d.high < d.close || d.low > d.open || d.low > d.close) {
-      console.warn(`[OHLC] ${label} OHLC inconsistency at time ${d.time}`);
-      missingCount++;
-    }
-  }
-
-  if (missingCount > 0) {
-    console.warn(`[OHLC] ${label}: ${missingCount} inconsistent candles out of ${derived.length}`);
-  } else {
-    console.log(`[OHLC] ${label}: ${base.length} M15 → ${derived.length} candles ✓`);
-  }
+  return candles.length > 0 ? candles : null;
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -116,55 +116,50 @@ export async function GET(request: NextRequest) {
   }
 
   const key = `${asset}_${timeframe}`;
-  if (cache.has(key)) {
-    return NextResponse.json(cache.get(key));
-  }
+  if (cache.has(key)) return NextResponse.json(cache.get(key));
 
-  // ── M15: single source of truth — read directly from CSV ─────────────────
+  // Helper: get M15 base, cached
+  const getBase15 = (): OHLCCandle[] | null => {
+    const m15Key = `${asset}_15M`;
+    const cached = cache.get(m15Key);
+    if (cached) return cached;
+    const data = loadM15(asset);
+    if (data && data.length > 0) cache.set(m15Key, data);
+    return data;
+  };
+
+  // ── M15: single source of truth ────────────────────────────────────────────
   if (timeframe === '15M') {
-    const candles = readIntradayCsv(asset, '15m');
+    const candles = getBase15();
     if (!candles || candles.length === 0) {
-      return NextResponse.json({ error: `No 15M data found for ${asset}.` }, { status: 404 });
+      return NextResponse.json({ error: `No M15 data for ${asset}.` }, { status: 404 });
     }
     cache.set(key, candles);
     return NextResponse.json(candles);
   }
 
-  // ── H1, 4H, 1D: derived from M15 via time-bucket aggregation ─────────────
-  if (timeframe in DERIVED_BUCKET_SECONDS) {
-    const bucketSeconds = DERIVED_BUCKET_SECONDS[timeframe];
-
-    // Load M15 base (reuse from cache)
-    const m15Key = `${asset}_15M`;
-    let base15 = cache.get(m15Key) ?? null;
-    if (!base15) {
-      base15 = readIntradayCsv(asset, '15m');
-      if (!base15 || base15.length === 0) {
-        return NextResponse.json(
-          { error: `No M15 base data for ${asset}. Run download_data.py first.` },
-          { status: 404 }
-        );
-      }
-      cache.set(m15Key, base15);
+  // ── H1 / 4H / 1D: derived from M15 by count-based grouping ────────────────
+  if (timeframe in M15_GROUP_SIZE) {
+    const base15 = getBase15();
+    if (!base15 || base15.length === 0) {
+      return NextResponse.json({ error: `No M15 base data for ${asset}.` }, { status: 404 });
     }
-
-    const candles = aggregateByBucket(base15, bucketSeconds);
+    const groupSize = M15_GROUP_SIZE[timeframe];
+    const candles   = aggregateByCount(base15, groupSize);
     if (candles.length === 0) {
-      return NextResponse.json({ error: `Aggregation produced no candles for ${asset} ${timeframe}.` }, { status: 500 });
+      return NextResponse.json({ error: `Not enough M15 data to generate ${timeframe} for ${asset}.` }, { status: 404 });
     }
-
-    validateAggregation(base15, candles, `${asset} ${timeframe}`);
+    console.log(`[OHLC] ${asset} ${timeframe}: ${base15.length} M15 → ${candles.length} candles`);
     cache.set(key, candles);
     return NextResponse.json(candles);
   }
 
   // ── 5M / 1M ───────────────────────────────────────────────────────────────
   if (SYNTHETIC_TIMEFRAMES.has(timeframe)) {
-    const suffix = timeframe === '5M' ? '5m' : '1m';
-
-    // Crypto: try real CSV first
+    // Crypto: prefer real CSV data
     if (CRYPTO_ASSETS.has(asset)) {
-      const real = readIntradayCsv(asset, suffix);
+      const suffix = timeframe === '5M' ? '5m' : '1m';
+      const real   = readCryptoIntraday(asset, suffix);
       if (real && real.length > 0) {
         console.log(`[OHLC] Real ${timeframe} for ${asset}: ${real.length} candles`);
         cache.set(key, real);
@@ -172,29 +167,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (!ENABLE_SYNTHETIC) {
-      return NextResponse.json(
-        { error: `${asset} ${timeframe}: no real data available. Synthetic generation is currently disabled.` },
-        { status: 404 }
-      );
+    // All assets: generate synthetic from M15
+    const base15 = getBase15();
+    if (!base15 || base15.length === 0) {
+      return NextResponse.json({ error: `No M15 base data for ${asset}.` }, { status: 404 });
     }
-
-    // Generate synthetic from M15
-    const m15Key = `${asset}_15M`;
-    let base15 = cache.get(m15Key) ?? null;
-    if (!base15) {
-      base15 = readIntradayCsv(asset, '15m');
-      if (!base15 || base15.length === 0) {
-        return NextResponse.json({ error: `No 15M base data for ${asset}.` }, { status: 404 });
-      }
-      cache.set(m15Key, base15);
-    }
-
     const synthetic = generateSyntheticCandles(base15, timeframe as '1M' | '5M');
     if (!synthetic || synthetic.length === 0) {
       return NextResponse.json({ error: `Synthetic generation failed for ${asset} ${timeframe}.` }, { status: 500 });
     }
-
     console.log(`[OHLC] Synthetic ${timeframe} for ${asset}: ${base15.length} M15 → ${synthetic.length} candles`);
     cache.set(key, synthetic);
     return NextResponse.json(synthetic);
