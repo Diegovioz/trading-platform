@@ -135,54 +135,30 @@ export function useBacktest() {
 
       let idx = 0;
       if (startDate) {
-        if (timeframe === '1D') {
-          const firstDate = String(firstAvailableTs);
-          const lastDate  = String(lastAvailableTs);
-          console.log('[loadData] Selected date:', startDate, '| First available:', firstDate, '| Last available:', lastDate, '| Total candles:', data.length);
+        // All timeframes now return Unix timestamps (derived from M15 single source)
+        const fromTs  = Math.floor(new Date(startDate + 'T00:00:00Z').getTime() / 1000);
+        const firstTs = data[0].time as number;
+        const lastTs  = data[data.length - 1].time as number;
+        const firstDate = new Date(firstTs * 1000).toISOString().split('T')[0];
+        const lastDate  = new Date(lastTs  * 1000).toISOString().split('T')[0];
 
-          if (startDate < firstDate) {
-            // Date is before the dataset — start from the beginning
-            console.log('[loadData] Date before dataset → shifting to first candle (idx=0)');
-            idx = 0;
-          } else if (startDate > lastDate) {
-            // Date is after the dataset — start from last valid candle and warn
-            console.log('[loadData] Date after dataset → clamping to last candle');
-            setError(`⚠️ Selected date is beyond available ${asset} data (last: ${lastDate}). Starting from last available candle.`);
+        console.log('[loadData] Selected date:', startDate, '| First available:', firstDate, '| Last available:', lastDate, '| Total candles:', data.length);
+
+        if (fromTs < firstTs) {
+          console.log('[loadData] Date before dataset → shifting to first candle (idx=0)');
+          if (!SYNTHETIC_TIMEFRAMES.has(timeframe)) {
+            setError(`⚠️ ${asset} ${timeframe} data only starts on ${firstDate}. Starting from first available candle.`);
             setTimeout(() => setError(null), 6000);
-            idx = data.length - 1;
-          } else {
-            const found = data.findIndex(c => (c.time as string) >= startDate);
-            idx = found >= 0 ? found : 0;
           }
+          idx = 0;
+        } else if (fromTs > lastTs) {
+          console.log('[loadData] Date after dataset → clamping to last candle');
+          setError(`⚠️ Selected date is beyond available ${asset} ${timeframe} data (last: ${lastDate}). Starting from last available candle.`);
+          setTimeout(() => setError(null), 6000);
+          idx = data.length - 1;
         } else {
-          const fromTs  = Math.floor(new Date(startDate + 'T00:00:00Z').getTime() / 1000);
-          const firstTs = data[0].time as number;
-          const lastTs  = data[data.length - 1].time as number;
-          const firstDate = new Date(firstTs * 1000).toISOString().split('T')[0];
-          const lastDate  = new Date(lastTs  * 1000).toISOString().split('T')[0];
-
-          console.log('[loadData] Selected date:', startDate, '| First available:', firstDate, '| Last available:', lastDate, '| Total candles:', data.length);
-
-          if (fromTs < firstTs) {
-            // Date is before the dataset — start from first available candle
-            console.log('[loadData] Date before dataset → shifting to first candle (idx=0)');
-            if (!SYNTHETIC_TIMEFRAMES.has(timeframe)) {
-              setError(
-                `⚠️ ${asset} ${timeframe} data only starts on ${firstDate}. Starting from first available candle.`
-              );
-              setTimeout(() => setError(null), 6000);
-            }
-            idx = 0;
-          } else if (fromTs > lastTs) {
-            // Date is after the dataset — clamp and warn
-            console.log('[loadData] Date after dataset → clamping to last candle');
-            setError(`⚠️ Selected date is beyond available ${asset} ${timeframe} data (last: ${lastDate}). Starting from last available candle.`);
-            setTimeout(() => setError(null), 6000);
-            idx = data.length - 1;
-          } else {
-            const found = data.findIndex(c => (c.time as number) >= fromTs);
-            idx = found >= 0 ? found : 0;
-          }
+          const found = data.findIndex(c => (c.time as number) >= fromTs);
+          idx = found >= 0 ? found : 0;
         }
       }
 

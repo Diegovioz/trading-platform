@@ -13,19 +13,14 @@ const ENABLE_SYNTHETIC = false;
 
 const DATA_DIR = join(process.cwd(), 'public', 'data');
 
-// Assets with real intraday CSV data (1m, 5m)
 const CRYPTO_ASSETS = new Set(['BTC', 'ETH']);
-
-// Non-crypto 1M/5M are generated from 15M base data
 const SYNTHETIC_TIMEFRAMES = new Set(['1M', '5M']);
 
-const TIMEFRAME_FILE: Record<string, string> = {
-  '1D':  '1d',
-  '4H':  '4h',
-  '1H':  '1h',
-  '15M': '15m',
-  '5M':  '5m',  // real data for crypto; synthetic for others
-  '1M':  '1m',  // real data for crypto; synthetic for others
+// Higher timeframes derived from M15 — bucket size in seconds
+const DERIVED_BUCKET_SECONDS: Record<string, number> = {
+  '1H': 3_600,
+  '4H': 14_400,
+  '1D': 86_400,
 };
 
 // ─── CSV helpers ─────────────────────────────────────────────────────────────
@@ -46,21 +41,68 @@ function readIntradayCsv(asset: string, suffix: string): OHLCCandle[] | null {
   }));
 }
 
-function readDailyCsv(asset: string): OHLCCandle[] | null {
-  const filePath = join(DATA_DIR, `${asset}_1d.csv`);
-  if (!existsSync(filePath)) return null;
+// ─── Aggregation ─────────────────────────────────────────────────────────────
+/**
+ * Aggregate M15 candles into larger time buckets using time-based alignment.
+ * Each output candle represents one complete bucket (hour, 4h, day).
+ */
+function aggregateByBucket(base: OHLCCandle[], bucketSeconds: number): OHLCCandle[] {
+  if (base.length === 0) return [];
 
-  const raw  = readFileSync(filePath, 'utf8');
-  const rows = parse(raw, { columns: true, skip_empty_lines: true, cast: true });
+  const result: OHLCCandle[] = [];
+  let bucketStart = -1;
+  let open = 0, high = 0, low = Infinity, close = 0, volume = 0;
+  let count = 0;
 
-  return rows.map((r: Record<string, unknown>) => ({
-    time:   String(r.date),
-    open:   Number(r.open),
-    high:   Number(r.high),
-    low:    Number(r.low),
-    close:  Number(r.close),
-    volume: Number(r.volume ?? 0),
-  }));
+  for (const c of base) {
+    const ts = c.time as number;
+    const bucket = Math.floor(ts / bucketSeconds) * bucketSeconds;
+
+    if (bucket !== bucketStart) {
+      // Flush previous bucket
+      if (count > 0) {
+        result.push({ time: bucketStart, open, high, low, close, volume });
+      }
+      // Start new bucket
+      bucketStart = bucket;
+      open   = c.open;
+      high   = c.high;
+      low    = c.low;
+      close  = c.close;
+      volume = c.volume ?? 0;
+      count  = 1;
+    } else {
+      high   = Math.max(high, c.high);
+      low    = Math.min(low,  c.low);
+      close  = c.close;
+      volume += c.volume ?? 0;
+      count++;
+    }
+  }
+
+  // Flush last bucket
+  if (count > 0) {
+    result.push({ time: bucketStart, open, high, low, close, volume });
+  }
+
+  return result;
+}
+
+function validateAggregation(base: OHLCCandle[], derived: OHLCCandle[], label: string): void {
+  let missingCount = 0;
+
+  for (const d of derived) {
+    if (d.high < d.open || d.high < d.close || d.low > d.open || d.low > d.close) {
+      console.warn(`[OHLC] ${label} OHLC inconsistency at time ${d.time}`);
+      missingCount++;
+    }
+  }
+
+  if (missingCount > 0) {
+    console.warn(`[OHLC] ${label}: ${missingCount} inconsistent candles out of ${derived.length}`);
+  } else {
+    console.log(`[OHLC] ${label}: ${base.length} M15 → ${derived.length} candles ✓`);
+  }
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -78,82 +120,85 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(cache.get(key));
   }
 
-  const suffix = TIMEFRAME_FILE[timeframe];
-  if (!suffix) {
-    return NextResponse.json({ error: `Unknown timeframe: ${timeframe}` }, { status: 400 });
+  // ── M15: single source of truth — read directly from CSV ─────────────────
+  if (timeframe === '15M') {
+    const candles = readIntradayCsv(asset, '15m');
+    if (!candles || candles.length === 0) {
+      return NextResponse.json({ error: `No 15M data found for ${asset}.` }, { status: 404 });
+    }
+    cache.set(key, candles);
+    return NextResponse.json(candles);
   }
 
-  // ── CRYPTO: 1M / 5M → try real CSV first ─────────────────────────────────
-  if (SYNTHETIC_TIMEFRAMES.has(timeframe) && CRYPTO_ASSETS.has(asset)) {
-    const real = readIntradayCsv(asset, suffix);
-    if (real && real.length > 0) {
-      console.log(`[OHLC] Real ${timeframe} data for ${asset}: ${real.length} candles`);
-      cache.set(key, real);
-      return NextResponse.json(real);
+  // ── H1, 4H, 1D: derived from M15 via time-bucket aggregation ─────────────
+  if (timeframe in DERIVED_BUCKET_SECONDS) {
+    const bucketSeconds = DERIVED_BUCKET_SECONDS[timeframe];
+
+    // Load M15 base (reuse from cache)
+    const m15Key = `${asset}_15M`;
+    let base15 = cache.get(m15Key) ?? null;
+    if (!base15) {
+      base15 = readIntradayCsv(asset, '15m');
+      if (!base15 || base15.length === 0) {
+        return NextResponse.json(
+          { error: `No M15 base data for ${asset}. Run download_data.py first.` },
+          { status: 404 }
+        );
+      }
+      cache.set(m15Key, base15);
     }
-    // No CSV — fall through to synthetic (if enabled) or return error
-    if (!ENABLE_SYNTHETIC) {
-      return NextResponse.json(
-        { error: `No real ${timeframe} data available for ${asset}. Add ${asset}_${suffix}.csv or enable synthetic.` },
-        { status: 404 }
-      );
+
+    const candles = aggregateByBucket(base15, bucketSeconds);
+    if (candles.length === 0) {
+      return NextResponse.json({ error: `Aggregation produced no candles for ${asset} ${timeframe}.` }, { status: 500 });
     }
-    console.log(`[OHLC] No real ${timeframe} CSV for ${asset} — generating synthetic from 15M`);
+
+    validateAggregation(base15, candles, `${asset} ${timeframe}`);
+    cache.set(key, candles);
+    return NextResponse.json(candles);
   }
 
-  // ── NON-CRYPTO (and crypto fallback): 1M / 5M → generate from 15M ─────────
+  // ── 5M / 1M ───────────────────────────────────────────────────────────────
   if (SYNTHETIC_TIMEFRAMES.has(timeframe)) {
+    const suffix = timeframe === '5M' ? '5m' : '1m';
+
+    // Crypto: try real CSV first
+    if (CRYPTO_ASSETS.has(asset)) {
+      const real = readIntradayCsv(asset, suffix);
+      if (real && real.length > 0) {
+        console.log(`[OHLC] Real ${timeframe} for ${asset}: ${real.length} candles`);
+        cache.set(key, real);
+        return NextResponse.json(real);
+      }
+    }
+
     if (!ENABLE_SYNTHETIC) {
       return NextResponse.json(
         { error: `${asset} ${timeframe}: no real data available. Synthetic generation is currently disabled.` },
         { status: 404 }
       );
     }
-    const base15key = `${asset}_15M`;
 
-    let base15: OHLCCandle[] | null = cache.get(base15key) ?? null;
+    // Generate synthetic from M15
+    const m15Key = `${asset}_15M`;
+    let base15 = cache.get(m15Key) ?? null;
     if (!base15) {
       base15 = readIntradayCsv(asset, '15m');
       if (!base15 || base15.length === 0) {
-        return NextResponse.json(
-          { error: `No 15M base data found for ${asset}. Cannot generate ${timeframe} data.` },
-          { status: 404 }
-        );
+        return NextResponse.json({ error: `No 15M base data for ${asset}.` }, { status: 404 });
       }
-      cache.set(base15key, base15);
+      cache.set(m15Key, base15);
     }
 
     const synthetic = generateSyntheticCandles(base15, timeframe as '1M' | '5M');
     if (!synthetic || synthetic.length === 0) {
-      return NextResponse.json(
-        { error: `Synthetic data generation failed for ${asset} ${timeframe}.` },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: `Synthetic generation failed for ${asset} ${timeframe}.` }, { status: 500 });
     }
 
-    console.log(`[OHLC] Synthetic ${timeframe} for ${asset}: ${base15.length} base → ${synthetic.length} candles`);
+    console.log(`[OHLC] Synthetic ${timeframe} for ${asset}: ${base15.length} M15 → ${synthetic.length} candles`);
     cache.set(key, synthetic);
     return NextResponse.json(synthetic);
   }
 
-  // ── REAL DATA: 1D / 4H / 1H / 15M ───────────────────────────────────────
-  if (timeframe === '1D') {
-    const candles = readDailyCsv(asset);
-    if (!candles || candles.length === 0) {
-      return NextResponse.json({ error: `No data file found for ${asset} 1D.` }, { status: 404 });
-    }
-    cache.set(key, candles);
-    return NextResponse.json(candles);
-  }
-
-  const candles = readIntradayCsv(asset, suffix);
-  if (!candles || candles.length === 0) {
-    return NextResponse.json(
-      { error: `No data file found for ${asset} ${timeframe}.` },
-      { status: 404 }
-    );
-  }
-
-  cache.set(key, candles);
-  return NextResponse.json(candles);
+  return NextResponse.json({ error: `Unknown timeframe: ${timeframe}` }, { status: 400 });
 }
