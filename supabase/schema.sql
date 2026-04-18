@@ -69,52 +69,6 @@ create table if not exists public.journal_trades (
   created_at   timestamptz not null default now()
 );
 
--- ─── Backtest trades ──────────────────────────────────────────────────────────
-create table if not exists public.backtest_trades (
-  id           uuid primary key default uuid_generate_v4(),
-  user_id      uuid not null references public.profiles(id) on delete cascade,
-  asset        text not null,
-  timeframe    text not null,
-  direction    text not null check (direction in ('long', 'short')),
-  entry_price  numeric not null,
-  exit_price   numeric not null,
-  stop_loss    numeric,
-  take_profit  numeric,
-  size         numeric not null default 1,
-  pnl          numeric not null,
-  notes        text,
-  entry_date   text not null,
-  exit_date    text not null,
-  close_reason text not null check (close_reason in ('SL', 'TP', 'Manual')),
-  month_tag    text not null,  -- 'YYYY-MM', enforces monthly limit
-  created_at   timestamptz not null default now()
-);
-
--- Monthly limit: max 10 rows per user per month_tag
-create or replace function public.check_backtest_monthly_limit()
-returns trigger
-language plpgsql
-as $$
-declare
-  current_count integer;
-begin
-  select count(*) into current_count
-  from public.backtest_trades
-  where user_id = new.user_id
-    and month_tag = new.month_tag;
-
-  if current_count >= 10 then
-    raise exception 'Monthly backtest save limit (10) reached for %', new.month_tag;
-  end if;
-
-  return new;
-end;
-$$;
-
-drop trigger if exists backtest_monthly_limit on public.backtest_trades;
-create trigger backtest_monthly_limit
-  before insert on public.backtest_trades
-  for each row execute procedure public.check_backtest_monthly_limit();
 
 -- ─── Row Level Security ───────────────────────────────────────────────────────
 
@@ -148,26 +102,10 @@ create policy "Admins can delete any journal trade"
   on public.journal_trades for delete
   using (is_admin());
 
--- Backtest trades
-alter table public.backtest_trades enable row level security;
-
-create policy "Users can view own backtest trades"
-  on public.backtest_trades for select
-  using (user_id = auth.uid());
-
-create policy "Users can insert own backtest trades"
-  on public.backtest_trades for insert
-  with check (user_id = auth.uid());
-
-create policy "Users can delete own backtest trades"
-  on public.backtest_trades for delete
-  using (user_id = auth.uid());
 
 -- ─── Indexes ──────────────────────────────────────────────────────────────────
 create index if not exists idx_journal_trades_user_id   on public.journal_trades(user_id);
 create index if not exists idx_journal_trades_date      on public.journal_trades(trade_date desc);
-create index if not exists idx_backtest_trades_user_id  on public.backtest_trades(user_id);
-create index if not exists idx_backtest_trades_month    on public.backtest_trades(user_id, month_tag);
 
 -- ─── Grant first admin ────────────────────────────────────────────────────────
 -- After signing up with your admin email, run this once:

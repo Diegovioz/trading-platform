@@ -5,3 +5,5 @@ node_modules
 .next
 dist
 .DS_Store
+public/data/
+*.csv
