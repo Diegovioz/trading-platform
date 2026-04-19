@@ -53,10 +53,10 @@ export async function evaluateTrade(
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 500,
-    system: 'You are an elite trading coach. Be strict, objective and concise. Return ONLY valid JSON — no markdown.',
+    system: 'Eres un coach de trading de élite. Sé estricto, objetivo y conciso. Responde SIEMPRE en español. Devuelve ÚNICAMENTE JSON válido — sin markdown.',
     messages: [{
       role: 'user',
-      content: `User Strategy:\n${strategy}\n\nTrade:\n${tradeSummary}\n\nEvaluate based on strategy adherence, risk management, execution quality.\nRules: do not inflate score, be direct, keep short.\n\nReturn JSON:\n{"score":number,"breakdown":{"strategy_adherence":number,"risk_management":number,"execution":number},"mistakes":["max 3"],"strengths":["max 3"],"feedback":"max 60 words"}`,
+      content: `Estrategia del usuario:\n${strategy}\n\nTrade:\n${tradeSummary}\n\nEvalúa según adherencia a la estrategia, gestión del riesgo y calidad de ejecución.\nReglas: no infles la puntuación, sé directo, respuesta corta.\n\nDevuelve JSON:\n{"score":number,"breakdown":{"strategy_adherence":number,"risk_management":number,"execution":number},"mistakes":["máx 3"],"strengths":["máx 3"],"feedback":"máx 60 palabras"}`,
     }],
   });
 
@@ -126,10 +126,10 @@ SL set: ${slUsage}/${trades.length} | TP set: ${tpUsage}/${trades.length}`;
   const message = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 400,
-    system: 'You are an elite trading coach. Be strict, objective and concise. Return ONLY valid JSON — no markdown.',
+    system: 'Eres un coach de trading de élite. Sé estricto, objetivo y conciso. Responde SIEMPRE en español. Devuelve ÚNICAMENTE JSON válido — sin markdown.',
     messages: [{
       role: 'user',
-      content: `User Strategy:\n${strategy}\n\nWeek Summary:\n${summary}\n\nProvide a weekly coaching recap.\nReturn JSON:\n{"overall_score":number,"highlights":["max 3"],"areas_to_improve":["max 3"],"pattern":"1 sentence behavioral pattern","next_week_focus":"1 sentence"}`,
+      content: `Estrategia del usuario:\n${strategy}\n\nResumen semanal:\n${summary}\n\nProporciona un resumen semanal de coaching.\nDevuelve JSON:\n{"overall_score":number,"highlights":["máx 3"],"areas_to_improve":["máx 3"],"pattern":"1 frase sobre patrón de comportamiento","next_week_focus":"1 frase"}`,
     }],
   });
 
