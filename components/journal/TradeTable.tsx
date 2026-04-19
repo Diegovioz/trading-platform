@@ -12,15 +12,100 @@ interface TradeTableProps {
   onEvaluate?: (tradeId: string) => Promise<{ error?: string }>;
 }
 
-function ScoreBadge({ score }: { score: number }) {
-  const color =
-    score >= 8 ? 'bg-green-500/15 text-green-400' :
-    score >= 5 ? 'bg-yellow-500/15 text-yellow-400' :
-                 'bg-red-500/15 text-red-400';
+interface EvalDetail {
+  breakdown: { strategy_adherence?: number; risk_management?: number; execution?: number };
+  mistakes: string[];
+  strengths: string[];
+  feedback: string;
+}
+
+function parseEval(ev: TradeEvaluation): EvalDetail | null {
+  try { return JSON.parse(ev.feedback); } catch { return null; }
+}
+
+function ScoreBadge({ score, onClick }: { score: number; onClick?: () => void }) {
+  const color = score >= 8 ? 'bg-green-500/15 text-green-400 ring-green-500/30'
+              : score >= 5 ? 'bg-yellow-500/15 text-yellow-400 ring-yellow-500/30'
+                           : 'bg-red-500/15 text-red-400 ring-red-500/30';
   return (
-    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold ${color}`}>
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ring-1 transition-opacity hover:opacity-80 ${color}`}
+      title="Click to see evaluation details"
+    >
       {score}
-    </span>
+    </button>
+  );
+}
+
+function EvalPanel({ ev, colSpan }: { ev: TradeEvaluation; colSpan: number }) {
+  const d = parseEval(ev);
+  return (
+    <tr className="bg-muted/10 border-b border-border/50">
+      <td colSpan={colSpan} className="px-6 py-4">
+        <div className="flex flex-col gap-3">
+          {/* Feedback */}
+          {d?.feedback && (
+            <p className="text-sm leading-relaxed">{d.feedback}</p>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Breakdown */}
+            {d?.breakdown && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Breakdown</p>
+                {([
+                  ['Strategy', d.breakdown.strategy_adherence],
+                  ['Risk Mgmt', d.breakdown.risk_management],
+                  ['Execution', d.breakdown.execution],
+                ] as [string, number | undefined][]).map(([label, val]) =>
+                  val != null ? (
+                    <div key={label} className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground w-20 shrink-0">{label}</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-border overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${val >= 8 ? 'bg-green-500' : val >= 5 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                          style={{ width: `${val * 10}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-medium w-6 text-right">{val}</span>
+                    </div>
+                  ) : null
+                )}
+              </div>
+            )}
+
+            {/* Mistakes */}
+            {d?.mistakes && d.mistakes.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-red-400 uppercase tracking-wide mb-1.5">Mistakes</p>
+                <ul className="space-y-1">
+                  {d.mistakes.map((m, i) => (
+                    <li key={i} className="text-xs text-muted-foreground flex gap-1.5">
+                      <span className="text-red-400 shrink-0">✕</span>{m}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Strengths */}
+            {d?.strengths && d.strengths.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-green-400 uppercase tracking-wide mb-1.5">Strengths</p>
+                <ul className="space-y-1">
+                  {d.strengths.map((s, i) => (
+                    <li key={i} className="text-xs text-muted-foreground flex gap-1.5">
+                      <span className="text-green-400 shrink-0">✓</span>{s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -30,6 +115,7 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
   const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
   const [evaluating, setEvaluating] = useState<string | null>(null);
   const [evalErrors, setEvalErrors] = useState<Record<string, string>>({});
+  const [expanded, setExpanded]     = useState<string | null>(null);
 
   const filtered = trades
     .filter(t =>
@@ -39,8 +125,7 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
       (t.notes ?? '').toLowerCase().includes(filter.toLowerCase())
     )
     .sort((a, b) => {
-      const av = a[sortKey] ?? '';
-      const bv = b[sortKey] ?? '';
+      const av = a[sortKey] ?? '', bv = b[sortKey] ?? '';
       const cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return sortDir === 'asc' ? cmp : -cmp;
     });
@@ -55,16 +140,29 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
     setEvaluating(tradeId);
     setEvalErrors(prev => { const n = { ...prev }; delete n[tradeId]; return n; });
     const result = await onEvaluate(tradeId);
-    if (result.error) setEvalErrors(prev => ({ ...prev, [tradeId]: result.error! }));
+    if (result.error) {
+      const msg = result.error.includes('strategy')
+        ? 'Define your strategy first in AI Coach.'
+        : result.error.includes('failed')
+        ? 'Evaluation failed. Try again.'
+        : result.error;
+      setEvalErrors(prev => ({ ...prev, [tradeId]: msg }));
+    } else {
+      setExpanded(tradeId); // auto-expand after scoring
+    }
     setEvaluating(null);
   }
 
-  const totalPnl = filtered.reduce((s, t) => s + t.pnl, 0);
-  const showScore = !!onEvaluate;
+  function toggleExpand(tradeId: string) {
+    setExpanded(prev => prev === tradeId ? null : tradeId);
+  }
+
+  const totalPnl   = filtered.reduce((s, t) => s + t.pnl, 0);
+  const showScore  = !!onEvaluate;
+  const baseColCount = (isAdmin ? 1 : 0) + 9 + (showScore ? 1 : 0) + (onDelete ? 1 : 0);
 
   return (
     <div className="space-y-4">
-      {/* Filters bar */}
       <div className="flex items-center gap-3">
         <input
           type="text"
@@ -81,7 +179,6 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
         </div>
       </div>
 
-      {/* Table */}
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full text-sm">
           <thead>
@@ -96,24 +193,25 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
               <Th sortable onClick={() => toggleSort('pnl')}>P&L</Th>
               <Th>Tags</Th>
               <Th>Notes</Th>
-              {showScore && <Th>Score</Th>}
+              {showScore && <Th>AI Score</Th>}
               {onDelete && <Th></Th>}
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={isAdmin ? 11 : 10} className="text-center py-12 text-muted-foreground">
+                <td colSpan={baseColCount} className="text-center py-12 text-muted-foreground">
                   No trades found.
                 </td>
               </tr>
             ) : (
-              filtered.map(trade => {
-                const evaluation = evaluationMap[trade.id];
+              filtered.flatMap(trade => {
+                const evaluation  = evaluationMap[trade.id];
                 const isEvaluating = evaluating === trade.id;
-                const evalError = evalErrors[trade.id];
+                const evalError   = evalErrors[trade.id];
+                const isExpanded  = expanded === trade.id;
 
-                return (
+                return [
                   <tr key={trade.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                     {isAdmin && (
                       <td className="px-4 py-3 text-xs text-muted-foreground">
@@ -141,30 +239,28 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                     <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px] truncate">
                       {trade.notes ?? '—'}
                     </td>
+
                     {showScore && (
                       <td className="px-4 py-3">
                         {evaluation ? (
-                          <div className="flex items-center gap-2" title={evaluation.feedback}>
-                            <ScoreBadge score={evaluation.score} />
-                          </div>
+                          <ScoreBadge score={evaluation.score} onClick={() => toggleExpand(trade.id)} />
                         ) : (
-                          <div className="flex flex-col gap-1">
+                          <div className="space-y-1">
                             <button
                               onClick={() => handleEvaluate(trade.id)}
                               disabled={isEvaluating}
-                              className="text-xs text-primary hover:underline disabled:opacity-50"
+                              className="px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors whitespace-nowrap"
                             >
-                              {isEvaluating ? 'Scoring…' : 'Score'}
+                              {isEvaluating ? 'Scoring…' : '✦ Score'}
                             </button>
                             {evalError && (
-                              <span className="text-xs text-destructive max-w-[100px] truncate" title={evalError}>
-                                {evalError}
-                              </span>
+                              <p className="text-xs text-destructive max-w-[110px]">{evalError}</p>
                             )}
                           </div>
                         )}
                       </td>
                     )}
+
                     {onDelete && (
                       <td className="px-4 py-3">
                         <button
@@ -178,8 +274,13 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                         </button>
                       </td>
                     )}
-                  </tr>
-                );
+                  </tr>,
+
+                  // Expandable evaluation panel
+                  isExpanded && evaluation
+                    ? <EvalPanel key={`${trade.id}-eval`} ev={evaluation} colSpan={baseColCount} />
+                    : null,
+                ].filter(Boolean);
               })
             )}
           </tbody>
@@ -189,15 +290,7 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
   );
 }
 
-function Th({
-  children,
-  sortable,
-  onClick,
-}: {
-  children?: React.ReactNode;
-  sortable?: boolean;
-  onClick?: () => void;
-}) {
+function Th({ children, sortable, onClick }: { children?: React.ReactNode; sortable?: boolean; onClick?: () => void }) {
   return (
     <th
       className={`px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wide ${sortable ? 'cursor-pointer hover:text-foreground' : ''}`}

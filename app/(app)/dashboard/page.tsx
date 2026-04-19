@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useAccounts } from '@/hooks/useAccounts';
 import { useTrades } from '@/hooks/useTrades';
 import { useProfile } from '@/hooks/useProfile';
+import { useCoach } from '@/hooks/useCoach';
 import AccountSelector from '@/components/dashboard/AccountSelector';
 import KPICards, { calcMetrics } from '@/components/dashboard/KPICards';
 import EquityCurve from '@/components/dashboard/EquityCurve';
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const { profile, isAdmin } = useProfile();
   const { accounts, loading: accLoading, createAccount, renameAccount, deleteAccount } = useAccounts();
   const { trades, loading: tradesLoading } = useTrades({ isAdmin });
+  const { evaluations } = useCoach();
 
   const [selectedAccount, setSelectedAccount] = useState<string>('all');
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -129,6 +131,24 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Last AI Evaluation */}
+      {!isAdmin && evaluations.length > 0 && (() => {
+        const last = [...evaluations].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+        let detail: { feedback?: string } | null = null;
+        try { detail = JSON.parse(last.feedback); } catch { /* ignore */ }
+        const color = last.score >= 8 ? 'text-green-400' : last.score >= 5 ? 'text-yellow-400' : 'text-red-400';
+        return (
+          <div className="card flex items-start gap-4">
+            <span className={`text-3xl font-bold tabular-nums ${color}`}>{last.score}<span className="text-base font-normal text-muted-foreground">/10</span></span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Last AI Evaluation</p>
+              <p className="text-sm">{detail?.feedback ?? '—'}</p>
+            </div>
+            <Link href="/coaching" className="text-xs text-primary hover:underline shrink-0 mt-0.5">View all →</Link>
+          </div>
+        );
+      })()}
 
       {/* Charts */}
       {!loading && filteredTrades.length > 0 && (
