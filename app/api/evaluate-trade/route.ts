@@ -66,8 +66,8 @@ Tags: ${trade.tags?.join(', ') ?? 'none'}`;
   try {
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system: 'You are a professional trading coach. Return ONLY valid JSON — no markdown, no explanation.',
+      max_tokens: 500,
+      system: 'You are an elite trading coach. Be strict, objective and concise. Return ONLY valid JSON — no markdown, no explanation.',
       messages: [
         {
           role: 'user',
@@ -77,21 +77,44 @@ ${strategy.strategy_text}
 Trade Data:
 ${tradeSummary}
 
-Evaluate this trade from 1 to 10 based on:
-- Strategy adherence
-- Risk management (stop loss usage, position sizing)
-- Execution quality
+Evaluate this trade based on:
+* strategy adherence
+* risk management
+* execution quality
 
-Return STRICT JSON (no markdown):
-{"score": <number 1-10>, "feedback": "<short actionable explanation under 120 words>"}`,
+Rules:
+* Do not inflate the score
+* Be direct and actionable
+* Keep response short
+
+Return STRICT JSON (no markdown, no code block):
+{
+  "score": number (1-10),
+  "breakdown": {
+    "strategy_adherence": number,
+    "risk_management": number,
+    "execution": number
+  },
+  "mistakes": ["max 3 items"],
+  "strengths": ["max 3 items"],
+  "feedback": "max 60 words"
+}`,
         },
       ],
     });
 
     const raw = (message.content[0] as { type: string; text: string }).text.trim();
     const parsed = JSON.parse(raw);
-    score    = Math.min(10, Math.max(1, Math.round(Number(parsed.score))));
-    feedback = String(parsed.feedback).slice(0, 500);
+
+    score = Math.min(10, Math.max(1, Math.round(Number(parsed.score))));
+
+    // Store the full structured response as JSON in the feedback field
+    feedback = JSON.stringify({
+      breakdown: parsed.breakdown ?? {},
+      mistakes:  Array.isArray(parsed.mistakes)  ? parsed.mistakes.slice(0, 3)  : [],
+      strengths: Array.isArray(parsed.strengths) ? parsed.strengths.slice(0, 3) : [],
+      feedback:  String(parsed.feedback ?? '').slice(0, 400),
+    });
   } catch (err) {
     console.error('[evaluate-trade] AI error:', err);
     return NextResponse.json({ error: 'AI evaluation failed. Try again.' }, { status: 500 });

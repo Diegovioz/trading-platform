@@ -3,16 +3,96 @@
 import { useState, useEffect } from 'react';
 import { useCoach } from '@/hooks/useCoach';
 import { formatDate } from '@/lib/utils';
+import type { TradeEvaluation } from '@/types';
 
-function ScoreBadge({ score }: { score: number }) {
+interface EvalDetail {
+  breakdown: { strategy_adherence?: number; risk_management?: number; execution?: number };
+  mistakes:  string[];
+  strengths: string[];
+  feedback:  string;
+}
+
+function parseDetail(ev: TradeEvaluation): EvalDetail | null {
+  try { return JSON.parse(ev.feedback); } catch { return null; }
+}
+
+function ScoreBadge({ score, size = 'md' }: { score: number; size?: 'sm' | 'md' }) {
   const color =
     score >= 8 ? 'bg-green-500/15 text-green-400' :
     score >= 5 ? 'bg-yellow-500/15 text-yellow-400' :
                  'bg-red-500/15 text-red-400';
+  const dim = size === 'sm' ? 'w-8 h-8 text-sm' : 'w-12 h-12 text-xl';
   return (
-    <span className={`inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold ${color}`}>
+    <span className={`inline-flex items-center justify-center rounded-full font-bold ${color} ${dim}`}>
       {score}
     </span>
+  );
+}
+
+function SubScore({ label, value }: { label: string; value?: number }) {
+  if (value == null) return null;
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium">{value}/10</span>
+    </div>
+  );
+}
+
+function EvalCard({ ev }: { ev: TradeEvaluation }) {
+  const detail = parseDetail(ev);
+  return (
+    <div className="card space-y-3">
+      <div className="flex items-start gap-4">
+        <ScoreBadge score={ev.score} />
+        <div className="flex-1 min-w-0">
+          {detail ? (
+            <>
+              <p className="text-sm leading-relaxed">{detail.feedback}</p>
+              <p className="text-xs text-muted-foreground mt-1">{formatDate(ev.created_at)}</p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">{ev.feedback}</p>
+          )}
+        </div>
+      </div>
+
+      {detail && (
+        <div className="grid grid-cols-1 gap-3 pt-2 border-t border-border/50 sm:grid-cols-3">
+          {/* Breakdown */}
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Breakdown</p>
+            <SubScore label="Strategy adherence" value={detail.breakdown.strategy_adherence} />
+            <SubScore label="Risk management"    value={detail.breakdown.risk_management} />
+            <SubScore label="Execution"          value={detail.breakdown.execution} />
+          </div>
+
+          {/* Mistakes */}
+          {detail.mistakes.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-red-400 uppercase tracking-wide mb-1">Mistakes</p>
+              <ul className="space-y-0.5">
+                {detail.mistakes.map((m, i) => (
+                  <li key={i} className="text-xs text-muted-foreground">• {m}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Strengths */}
+          {detail.strengths.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-green-400 uppercase tracking-wide mb-1">Strengths</p>
+              <ul className="space-y-0.5">
+                {detail.strengths.map((s, i) => (
+                  <li key={i} className="text-xs text-muted-foreground">• {s}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -40,7 +120,7 @@ export default function CoachingPage() {
       <div>
         <h1 className="text-2xl font-bold">AI Trading Coach</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Define your strategy, then evaluate trades from your journal.
+          Define your strategy, then score trades from your journal.
         </p>
       </div>
 
@@ -77,7 +157,9 @@ export default function CoachingPage() {
         <h2 className="text-base font-semibold">
           Evaluation History
           {evaluations.length > 0 && (
-            <span className="ml-2 text-xs text-muted-foreground font-normal">{evaluations.length} trades scored</span>
+            <span className="ml-2 text-xs text-muted-foreground font-normal">
+              {evaluations.length} trade{evaluations.length !== 1 ? 's' : ''} scored
+            </span>
           )}
         </h2>
 
@@ -90,15 +172,7 @@ export default function CoachingPage() {
           </div>
         )}
 
-        {sorted.map(ev => (
-          <div key={ev.id} className="card flex items-start gap-4">
-            <ScoreBadge score={ev.score} />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm leading-relaxed">{ev.feedback}</p>
-              <p className="text-xs text-muted-foreground mt-1">{formatDate(ev.created_at)}</p>
-            </div>
-          </div>
-        ))}
+        {sorted.map(ev => <EvalCard key={ev.id} ev={ev} />)}
       </div>
     </div>
   );
