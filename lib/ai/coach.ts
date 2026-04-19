@@ -60,7 +60,8 @@ export async function evaluateTrade(
     }],
   });
 
-  const raw = (message.content[0] as { type: string; text: string }).text.trim();
+  const rawText = (message.content[0] as { type: string; text: string }).text.trim();
+  const raw = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const parsed = JSON.parse(raw);
 
   return {
@@ -132,7 +133,8 @@ SL set: ${slUsage}/${trades.length} | TP set: ${tpUsage}/${trades.length}`;
     }],
   });
 
-  const raw = (message.content[0] as { type: string; text: string }).text.trim();
+  const rawText = (message.content[0] as { type: string; text: string }).text.trim();
+  const raw = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   const parsed = JSON.parse(raw);
 
   return {
