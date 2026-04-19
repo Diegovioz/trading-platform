@@ -243,7 +243,15 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                     {showScore && (
                       <td className="px-4 py-3">
                         {evaluation ? (
-                          <ScoreBadge score={evaluation.score} onClick={() => toggleExpand(trade.id)} />
+                          <div className="flex items-center gap-2">
+                            <ScoreBadge score={evaluation.score} onClick={() => toggleExpand(trade.id)} />
+                            <button
+                              onClick={() => toggleExpand(trade.id)}
+                              className="text-xs text-primary hover:underline whitespace-nowrap"
+                            >
+                              {expanded === trade.id ? 'Hide' : 'View Score'}
+                            </button>
+                          </div>
                         ) : (
                           <div className="space-y-1">
                             <button
@@ -251,7 +259,7 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                               disabled={isEvaluating}
                               className="px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors whitespace-nowrap"
                             >
-                              {isEvaluating ? 'Scoring…' : '✦ Score'}
+                              {isEvaluating ? 'Evaluating…' : 'Evaluate'}
                             </button>
                             {evalError && (
                               <p className="text-xs text-destructive max-w-[110px]">{evalError}</p>

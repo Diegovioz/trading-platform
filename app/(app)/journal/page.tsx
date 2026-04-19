@@ -38,8 +38,8 @@ export default function JournalPage() {
           trades={trades}
           isAdmin={isAdmin}
           onDelete={deleteTrade}
-          evaluationMap={isAdmin ? undefined : evaluationMap}
-          onEvaluate={isAdmin ? undefined : evaluateTrade}
+          evaluationMap={evaluationMap}
+          onEvaluate={evaluateTrade}
         />
       )}
     </div>
