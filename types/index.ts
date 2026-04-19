@@ -14,7 +14,15 @@ export interface TradeEvaluation {
   user_id: string;
   trade_id: string;
   score: number;
-  feedback: string;
+  feedback: string; // JSON-serialized EvaluationDetail
+  created_at: string;
+}
+
+export interface WeeklyRecap {
+  id: string;
+  user_id: string;
+  week_start: string;
+  summary: string; // JSON-serialized RecapResult
   created_at: string;
 }
 
