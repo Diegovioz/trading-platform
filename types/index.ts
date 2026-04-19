@@ -1,5 +1,23 @@
 // ─── Database row types ───────────────────────────────────────────────────────
 
+export interface UserStrategy {
+  id: string;
+  user_id: string;
+  strategy_text: string;
+  rules: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TradeEvaluation {
+  id: string;
+  user_id: string;
+  trade_id: string;
+  score: number;
+  feedback: string;
+  created_at: string;
+}
+
 export interface Account {
   id: string;
   user_id: string;

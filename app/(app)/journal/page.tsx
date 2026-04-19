@@ -4,10 +4,12 @@ import Link from 'next/link';
 import TradeTable from '@/components/journal/TradeTable';
 import { useTrades } from '@/hooks/useTrades';
 import { useProfile } from '@/hooks/useProfile';
+import { useCoach } from '@/hooks/useCoach';
 
 export default function JournalPage() {
-  const { profile, isAdmin } = useProfile();
+  const { isAdmin } = useProfile();
   const { trades, loading, error, deleteTrade } = useTrades({ isAdmin });
+  const { evaluationMap, evaluateTrade } = useCoach();
 
   return (
     <div className="p-8 space-y-6">
@@ -36,6 +38,8 @@ export default function JournalPage() {
           trades={trades}
           isAdmin={isAdmin}
           onDelete={deleteTrade}
+          evaluationMap={isAdmin ? undefined : evaluationMap}
+          onEvaluate={isAdmin ? undefined : evaluateTrade}
         />
       )}
     </div>
