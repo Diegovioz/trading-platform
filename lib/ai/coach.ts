@@ -111,7 +111,7 @@ export async function generateWeeklyRecap(
   const winRate    = Math.round((wins.length / trades.length) * 100);
   const best       = trades.reduce((a, b) => a.pnl > b.pnl ? a : b);
   const worst      = trades.reduce((a, b) => a.pnl < b.pnl ? a : b);
-  const assets     = [...new Set(trades.map(t => t.asset))].join(', ');
+  const assets     = Array.from(new Set(trades.map(t => t.asset))).join(', ');
   const slUsage    = trades.filter(t => t.stop_loss).length;
   const tpUsage    = trades.filter(t => t.take_profit).length;
 
