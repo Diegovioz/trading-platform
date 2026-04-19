@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { JournalTrade, TradeEvaluation } from '@/types';
 import { formatCurrency, formatDate, pnlColor } from '@/lib/utils';
+import { useCountdown, fmtCountdown } from '@/hooks/useCountdown';
 
 interface TradeTableProps {
   trades: JournalTrade[];
@@ -10,6 +11,7 @@ interface TradeTableProps {
   onDelete?: (id: string) => void;
   evaluationMap?: Record<string, TradeEvaluation>;
   onEvaluate?: (tradeId: string) => Promise<{ error?: string }>;
+  evalLimitAt?: string | null;
 }
 
 interface EvalDetail {
@@ -109,13 +111,16 @@ function EvalPanel({ ev, colSpan }: { ev: TradeEvaluation; colSpan: number }) {
   );
 }
 
-export default function TradeTable({ trades, isAdmin = false, onDelete, evaluationMap = {}, onEvaluate }: TradeTableProps) {
+export default function TradeTable({ trades, isAdmin = false, onDelete, evaluationMap = {}, onEvaluate, evalLimitAt }: TradeTableProps) {
   const [filter, setFilter]         = useState('');
   const [sortKey, setSortKey]       = useState<'trade_date' | 'pnl' | 'asset'>('trade_date');
   const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
   const [evaluating, setEvaluating] = useState<string | null>(null);
   const [evalErrors, setEvalErrors] = useState<Record<string, string>>({});
   const [expanded, setExpanded]     = useState<string | null>(null);
+
+  const evalCountdown  = useCountdown(evalLimitAt, 24);
+  const isEvalBlocked  = evalCountdown !== null;
 
   const filtered = trades
     .filter(t =>
@@ -254,15 +259,24 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                           </div>
                         ) : (
                           <div className="space-y-1">
-                            <button
-                              onClick={() => handleEvaluate(trade.id)}
-                              disabled={isEvaluating}
-                              className="px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors whitespace-nowrap"
-                            >
-                              {isEvaluating ? 'Evaluating…' : 'Evaluate'}
-                            </button>
-                            {evalError && (
-                              <p className="text-xs text-destructive max-w-[110px]">{evalError}</p>
+                            {isEvalBlocked ? (
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground" title="Usage limited to control system quality">
+                                <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" strokeWidth="1.5"/><path strokeLinecap="round" strokeWidth="1.5" d="M12 6v6l3 3"/></svg>
+                                <span className="font-mono">{fmtCountdown(evalCountdown!)}</span>
+                              </div>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => handleEvaluate(trade.id)}
+                                  disabled={isEvaluating}
+                                  className="px-2.5 py-1 rounded text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors whitespace-nowrap"
+                                >
+                                  {isEvaluating ? 'Evaluating…' : 'Evaluate'}
+                                </button>
+                                {evalError && (
+                                  <p className="text-xs text-destructive max-w-[110px]">{evalError}</p>
+                                )}
+                              </>
                             )}
                           </div>
                         )}

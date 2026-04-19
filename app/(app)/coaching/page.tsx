@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useCoach } from '@/hooks/useCoach';
+import { useCountdown, fmtCountdown } from '@/hooks/useCountdown';
 import { formatDate, formatCurrency } from '@/lib/utils';
 import type { TradeEvaluation, WeeklyRecap } from '@/types';
 import type { RecapResult } from '@/lib/ai/coach';
@@ -127,7 +128,9 @@ function RecapCard({ recap }: { recap: WeeklyRecap }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function CoachingPage() {
-  const { strategy, evaluations, recaps, loading, saving, recapping, error, saveStrategy, generateRecap } = useCoach();
+  const { strategy, evaluations, recaps, lastRecapAt, loading, saving, recapping, error, saveStrategy, generateRecap } = useCoach();
+  const recapCountdown  = useCountdown(lastRecapAt, 7 * 24);
+  const isRecapBlocked  = recapCountdown !== null;
   const [text, setText]   = useState('');
   const [saved, setSaved] = useState(false);
   const [recapMsg, setRecapMsg] = useState<string | null>(null);
@@ -188,13 +191,20 @@ export default function CoachingPage() {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold">Weekly Recap</h2>
-          <button
-            onClick={handleRecap}
-            disabled={recapping || loading}
-            className="btn-primary text-sm"
-          >
-            {recapping ? 'Generating…' : 'Generate Weekly Recap'}
-          </button>
+          {isRecapBlocked ? (
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground" title="Usage limited to control system quality">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" strokeWidth="1.5"/><path strokeLinecap="round" strokeWidth="1.5" d="M12 6v6l3 3"/></svg>
+              Next recap in: <span className="font-mono">{fmtCountdown(recapCountdown!)}</span>
+            </div>
+          ) : (
+            <button
+              onClick={handleRecap}
+              disabled={recapping || loading}
+              className="btn-primary text-sm"
+            >
+              {recapping ? 'Generating…' : 'Generate Weekly Recap'}
+            </button>
+          )}
         </div>
         {recapMsg && <p className="text-xs text-muted-foreground">{recapMsg}</p>}
         {!loading && recaps.length === 0 && (

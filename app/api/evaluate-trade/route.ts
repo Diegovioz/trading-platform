@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { evaluateTrade } from '@/lib/ai/coach';
 
+const EVAL_LIMIT_MS = 24 * 3600 * 1000;
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -9,6 +11,25 @@ export async function POST(request: NextRequest) {
 
   const { trade_id } = await request.json();
   if (!trade_id) return NextResponse.json({ error: 'trade_id is required' }, { status: 400 });
+
+  // Enforce 24h usage limit
+  const { data: limits } = await supabase
+    .from('user_usage_limits')
+    .select('last_trade_evaluation_at')
+    .eq('user_id', user.id)
+    .single();
+
+  if (limits?.last_trade_evaluation_at) {
+    const elapsed = Date.now() - new Date(limits.last_trade_evaluation_at).getTime();
+    if (elapsed < EVAL_LIMIT_MS) {
+      const remainingMs = EVAL_LIMIT_MS - elapsed;
+      const hours = Math.ceil(remainingMs / 3_600_000);
+      return NextResponse.json(
+        { error: `You can evaluate a new trade in ${hours} hour${hours !== 1 ? 's' : ''}`, remaining_ms: remainingMs },
+        { status: 429 }
+      );
+    }
+  }
 
   // Return cached result if already evaluated
   const { data: existing } = await supabase
@@ -43,7 +64,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'AI evaluation failed. Try again.' }, { status: 500 });
   }
 
-  // Persist — store full structured result as JSON in feedback column
+  // Persist evaluation
   const { data: evaluation, error: saveErr } = await supabase
     .from('trade_evaluations')
     .insert({
@@ -61,5 +82,11 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (saveErr) return NextResponse.json({ error: saveErr.message }, { status: 500 });
-  return NextResponse.json({ data: evaluation });
+
+  // Update usage limit timestamp
+  await supabase
+    .from('user_usage_limits')
+    .upsert({ user_id: user.id, last_trade_evaluation_at: new Date().toISOString() }, { onConflict: 'user_id' });
+
+  return NextResponse.json({ data: evaluation, last_eval_at: new Date().toISOString() });
 }

@@ -9,7 +9,7 @@ import { useCoach } from '@/hooks/useCoach';
 export default function JournalPage() {
   const { isAdmin } = useProfile();
   const { trades, loading, error, deleteTrade } = useTrades({ isAdmin });
-  const { evaluationMap, evaluateTrade } = useCoach();
+  const { evaluationMap, evaluateTrade, lastEvalAt } = useCoach();
 
   return (
     <div className="p-8 space-y-6">
@@ -40,6 +40,7 @@ export default function JournalPage() {
           onDelete={deleteTrade}
           evaluationMap={evaluationMap}
           onEvaluate={evaluateTrade}
+          evalLimitAt={lastEvalAt}
         />
       )}
     </div>
