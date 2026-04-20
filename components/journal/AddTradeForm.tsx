@@ -103,23 +103,30 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
     let imageUrl: string | null = null;
     if (imageFile) {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const ext  = 'jpg'; // always JPEG after compression
-        const path = `${user.id}/${tradeDate}-${Date.now()}.${ext}`;
-        const { error: uploadErr } = await supabase.storage
-          .from('trade-images')
-          .upload(path, imageFile, { cacheControl: '3600', upsert: false });
-        if (uploadErr) {
-          setError('Error al subir la imagen. Inténtalo de nuevo.');
-          setLoading(false);
-          return;
-        }
-        const { data: { publicUrl } } = supabase.storage
-          .from('trade-images')
-          .getPublicUrl(path);
-        imageUrl = publicUrl;
-
+      if (!user?.id) {
+        setError('Usuario no autenticado.');
+        setLoading(false);
+        return;
       }
+
+      const filePath = `trades/${user.id}/${Date.now()}.jpg`;
+      console.log('[upload] path:', filePath, '| size:', (imageFile.size / 1024).toFixed(1), 'KB');
+
+      const { error: uploadErr } = await supabase.storage
+        .from('trade-images')
+        .upload(filePath, imageFile, { contentType: 'image/jpeg', upsert: false });
+
+      if (uploadErr) {
+        console.error('[upload] UPLOAD ERROR:', uploadErr);
+        setError(`Error al subir la imagen: ${uploadErr.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from('trade-images')
+        .getPublicUrl(filePath);
+      imageUrl = publicUrlData.publicUrl;
     }
 
     const result = await onAdd({
