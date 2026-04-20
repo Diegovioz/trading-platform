@@ -55,8 +55,8 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
       setImageError('Solo se permiten archivos JPG y PNG.');
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      setImageError('La imagen debe ser menor de 5MB.');
+    if (file.size > 10 * 1024 * 1024) {
+      setImageError('La imagen debe ser menor de 10MB.');
       return;
     }
     setImageError('');

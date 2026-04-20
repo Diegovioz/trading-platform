@@ -1,5 +1,6 @@
-const MAX_DIMENSION = 1280;
-const MAX_BYTES     = 500 * 1024; // 500 KB
+const MAX_DIMENSION  = 1280;
+const MAX_INPUT_BYTES = 10 * 1024 * 1024; // 10 MB — reject before compression
+const TARGET_BYTES    =  1 * 1024 * 1024; // 1 MB — soft target after compression
 
 async function drawCompressed(file: File, quality: number): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -34,26 +35,33 @@ async function drawCompressed(file: File, quality: number): Promise<Blob> {
 }
 
 export async function compressImage(file: File): Promise<{ file: File; warning?: string }> {
-  const MAX_INPUT = 5 * 1024 * 1024; // 5 MB pre-compression limit
+  if (!file.type.startsWith('image/')) throw new Error('NOT_IMAGE');
+  if (file.size > MAX_INPUT_BYTES)     throw new Error('TOO_LARGE');
 
-  if (!file.type.startsWith('image/')) {
-    throw new Error('NOT_IMAGE');
-  }
-  if (file.size > MAX_INPUT) {
-    throw new Error('TOO_LARGE');
-  }
+  console.log(`[compressImage] original: ${(file.size / 1024).toFixed(1)} KB`);
 
   try {
+    // Always compress at 0.7 first
     let blob = await drawCompressed(file, 0.7);
+    console.log(`[compressImage] after 0.7: ${(blob.size / 1024).toFixed(1)} KB`);
 
-    if (blob.size > MAX_BYTES) {
-      blob = await drawCompressed(file, 0.6);
+    // If still above target, try 0.55
+    if (blob.size > TARGET_BYTES) {
+      blob = await drawCompressed(file, 0.55);
+      console.log(`[compressImage] after 0.55: ${(blob.size / 1024).toFixed(1)} KB`);
     }
 
-    const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+    // Always upload regardless — never block
+    const compressed = new File(
+      [blob],
+      file.name.replace(/\.[^.]+$/, '.jpg'),
+      { type: 'image/jpeg' },
+    );
+
+    console.log(`[compressImage] final: ${(compressed.size / 1024).toFixed(1)} KB`);
     return { file: compressed };
-  } catch {
-    // Fallback: use original file
+  } catch (err) {
+    console.warn('[compressImage] compression failed, using original:', err);
     return { file, warning: 'Image not optimized' };
   }
 }
