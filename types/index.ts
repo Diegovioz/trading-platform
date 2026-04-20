@@ -31,8 +31,8 @@ export interface Account {
   user_id: string;
   name: string;
   initial_capital: number;
-  highest_equity: number;   // persisted in DB — trailing peak
-  drawdown_floor: number;   // persisted in DB — highest_equity * 0.90
+  highest_equity: number;
+  drawdown_floor: number;   // always initial_capital * 0.90 — static, never moves
   created_at: string;
   // computed client-side after fetching
   total_pnl: number;
@@ -40,7 +40,7 @@ export interface Account {
   current_balance: number;
   is_failed: boolean;       // current_balance <= drawdown_floor
   remaining_risk: number;   // current_balance - drawdown_floor
-  drawdown_used_pct: number; // how close to the floor (0-100)
+  drawdown_used_pct: number; // 0–100: how much of the 10% max DD is consumed
 }
 
 

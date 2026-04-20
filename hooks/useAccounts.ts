@@ -6,14 +6,12 @@ import type { Account } from '@/types';
 
 function enrichAccount(raw: Record<string, unknown>, totalPnl: number, totalTrades: number): Account {
   const initial   = Number(raw.initial_capital) || 0;
-  const highEq    = Number(raw.highest_equity)  || initial;
-  const ddFloor   = Number(raw.drawdown_floor)  || initial * 0.9;
+  const ddFloor   = initial * 0.90;          // static — never trails profits
+  const maxDD     = initial * 0.10;
   const balance   = initial + totalPnl;
-  const remaining = balance - ddFloor;
-  // % of the risk window already consumed: 0 = safe, 100 = at the floor
-  const riskWindow      = highEq - ddFloor;
-  const drawdownUsedPct = riskWindow > 0
-    ? Math.min(100, Math.max(0, ((highEq - balance) / riskWindow) * 100))
+  const lossFromInitial   = initial - balance;
+  const drawdownUsedPct   = maxDD > 0
+    ? Math.min(100, Math.max(0, (lossFromInitial / maxDD) * 100))
     : 0;
 
   return {
@@ -21,14 +19,14 @@ function enrichAccount(raw: Record<string, unknown>, totalPnl: number, totalTrad
     user_id:         String(raw.user_id),
     name:            String(raw.name),
     initial_capital: initial,
-    highest_equity:  highEq,
+    highest_equity:  initial,                // not used in static mode
     drawdown_floor:  ddFloor,
     created_at:      String(raw.created_at),
     total_pnl:       totalPnl,
     total_trades:    totalTrades,
     current_balance: balance,
     is_failed:       balance <= ddFloor,
-    remaining_risk:  remaining,
+    remaining_risk:  balance - ddFloor,
     drawdown_used_pct: drawdownUsedPct,
   };
 }
@@ -68,7 +66,6 @@ export function useAccounts() {
       user_id: user.id,
       name,
       initial_capital,
-      highest_equity: initial_capital,
       drawdown_floor: initial_capital * 0.9,
     });
     fetchAccounts();
