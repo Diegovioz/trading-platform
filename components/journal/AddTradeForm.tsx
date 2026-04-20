@@ -3,11 +3,11 @@
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { compressImage } from '@/lib/utils/compressImage';
 import type { JournalTrade, Account } from '@/types';
 
 const ASSETS = ['NQ', 'BTC', 'ETH', 'XAUUSD', 'NVDA', 'SOFI', 'TSLA'];
 const PRESET_TAGS = ['Breakout', 'Reversal', 'Trend', 'News', 'Scalp', 'Swing', 'FOMO', 'Overtraded'];
-const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
 
 interface AddTradeFormProps {
   onAdd: (trade: Omit<JournalTrade, 'id' | 'user_id' | 'created_at' | 'profile'>) => Promise<{ error?: string }>;
@@ -31,9 +31,11 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
   const [notes,       setNotes]       = useState('');
   const [imageFile,   setImageFile]   = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [imageError,  setImageError]  = useState('');
-  const [error,       setError]       = useState('');
-  const [loading,     setLoading]     = useState(false);
+  const [imageError,    setImageError]    = useState('');
+  const [imageOptimizing, setImageOptimizing] = useState(false);
+  const [imageWarning,  setImageWarning]  = useState('');
+  const [error,         setError]         = useState('');
+  const [loading,       setLoading]       = useState(false);
 
   const entry = parseFloat(entryPrice);
   const exit  = parseFloat(exitPrice);
@@ -46,20 +48,27 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
     setTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   }
 
-  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+    if (!file.type.startsWith('image/')) {
       setImageError('Solo se permiten archivos JPG y PNG.');
       return;
     }
-    if (file.size > MAX_SIZE) {
-      setImageError('La imagen debe ser menor de 2MB.');
+    if (file.size > 5 * 1024 * 1024) {
+      setImageError('La imagen debe ser menor de 5MB.');
       return;
     }
     setImageError('');
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+    setImageWarning('');
+    setImageOptimizing(true);
+    setImagePreview(URL.createObjectURL(file)); // show original while compressing
+
+    const { file: compressed, warning } = await compressImage(file);
+    setImageFile(compressed);
+    setImagePreview(URL.createObjectURL(compressed));
+    setImageOptimizing(false);
+    if (warning) setImageWarning(warning);
   }
 
   function removeImage() {
@@ -95,7 +104,7 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
     if (imageFile) {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const ext  = imageFile.name.split('.').pop();
+        const ext  = 'jpg'; // always JPEG after compression
         const path = `${user.id}/${tradeDate}-${Date.now()}.${ext}`;
         const { error: uploadErr } = await supabase.storage
           .from('trade-images')
@@ -285,7 +294,9 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
             />
           </label>
         )}
-        {imageError && <p className="text-destructive text-xs mt-1">{imageError}</p>}
+        {imageOptimizing && <p className="text-muted-foreground text-xs mt-1">Optimizando imagen…</p>}
+        {imageWarning   && <p className="text-yellow-500 text-xs mt-1">{imageWarning}</p>}
+        {imageError     && <p className="text-destructive text-xs mt-1">{imageError}</p>}
       </div>
 
       {error && <p className="text-destructive text-sm">{error}</p>}
