@@ -244,12 +244,24 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                     <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px]">
                       <div className="flex items-center gap-2">
                         <span className="truncate">{trade.notes ?? '—'}</span>
-                        {trade.image_url && (
-                          <a href={trade.image_url} target="_blank" rel="noopener noreferrer" title="Ver captura">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={trade.image_url} alt="screenshot" className="w-8 h-8 rounded object-cover border border-border shrink-0 hover:opacity-80 transition-opacity" />
-                          </a>
-                        )}
+                        {trade.image_url && (() => {
+                          const daysLeft = trade.image_expires_at
+                            ? Math.ceil((new Date(trade.image_expires_at).getTime() - Date.now()) / 86_400_000)
+                            : null;
+                          return (
+                            <div className="flex flex-col items-center gap-0.5 shrink-0">
+                              <a href={trade.image_url} target="_blank" rel="noopener noreferrer" title="Ver captura">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={trade.image_url} alt="screenshot" className="w-8 h-8 rounded object-cover border border-border hover:opacity-80 transition-opacity" />
+                              </a>
+                              {daysLeft !== null && (
+                                <span className="text-[9px] text-muted-foreground leading-none">
+                                  {daysLeft}d
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </td>
 

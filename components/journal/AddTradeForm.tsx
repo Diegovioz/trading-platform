@@ -118,6 +118,7 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
           .from('trade-images')
           .getPublicUrl(path);
         imageUrl = publicUrl;
+
       }
     }
 
@@ -133,8 +134,11 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
       pnl,
       trade_date:   tradeDate,
       tags:         tags.length ? tags : null,
-      notes:        notes || null,
-      image_url:    imageUrl,
+      notes:            notes || null,
+      image_url:        imageUrl,
+      image_expires_at: imageUrl
+        ? new Date(Date.now() + 14 * 24 * 3600 * 1000).toISOString()
+        : null,
     });
 
     if (result.error) {

@@ -71,6 +71,7 @@ export interface JournalTrade {
   trade_date: string;
   created_at: string;
   image_url: string | null;
+  image_expires_at: string | null;
   // joined
   profile?: Pick<Profile, 'full_name' | 'email'>;
 }
