@@ -70,6 +70,7 @@ export interface JournalTrade {
   tags: string[] | null;
   trade_date: string;
   created_at: string;
+  image_url: string | null;
   // joined
   profile?: Pick<Profile, 'full_name' | 'email'>;
 }

@@ -241,8 +241,16 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                         <span key={tag} className="tag-neutral mr-1">{tag}</span>
                       )) ?? '—'}
                     </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px] truncate">
-                      {trade.notes ?? '—'}
+                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px]">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate">{trade.notes ?? '—'}</span>
+                        {trade.image_url && (
+                          <a href={trade.image_url} target="_blank" rel="noopener noreferrer" title="Ver captura">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={trade.image_url} alt="screenshot" className="w-8 h-8 rounded object-cover border border-border shrink-0 hover:opacity-80 transition-opacity" />
+                          </a>
+                        )}
+                      </div>
                     </td>
 
                     {showScore && (

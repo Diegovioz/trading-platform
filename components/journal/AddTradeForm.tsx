@@ -2,10 +2,12 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import type { JournalTrade, Account } from '@/types';
 
 const ASSETS = ['NQ', 'BTC', 'ETH', 'XAUUSD', 'NVDA', 'SOFI', 'TSLA'];
 const PRESET_TAGS = ['Breakout', 'Reversal', 'Trend', 'News', 'Scalp', 'Swing', 'FOMO', 'Overtraded'];
+const MAX_SIZE = 2 * 1024 * 1024; // 2 MB
 
 interface AddTradeFormProps {
   onAdd: (trade: Omit<JournalTrade, 'id' | 'user_id' | 'created_at' | 'profile'>) => Promise<{ error?: string }>;
@@ -13,7 +15,8 @@ interface AddTradeFormProps {
 }
 
 export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps) {
-  const router = useRouter();
+  const router  = useRouter();
+  const supabase = createClient();
 
   const [accountId,   setAccountId]   = useState<string>('');
   const [asset,       setAsset]       = useState('NQ');
@@ -26,6 +29,9 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
   const [tradeDate,   setTradeDate]   = useState(new Date().toISOString().split('T')[0]);
   const [tags,        setTags]        = useState<string[]>([]);
   const [notes,       setNotes]       = useState('');
+  const [imageFile,   setImageFile]   = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageError,  setImageError]  = useState('');
   const [error,       setError]       = useState('');
   const [loading,     setLoading]     = useState(false);
 
@@ -40,6 +46,28 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
     setTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   }
 
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      setImageError('Solo se permiten archivos JPG y PNG.');
+      return;
+    }
+    if (file.size > MAX_SIZE) {
+      setImageError('La imagen debe ser menor de 2MB.');
+      return;
+    }
+    setImageError('');
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  }
+
+  function removeImage() {
+    setImageFile(null);
+    setImagePreview(null);
+    setImageError('');
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -51,17 +79,38 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
       return;
     }
 
-    // Block if selected account has failed its drawdown limit
     if (accountId) {
       const selectedAcc = accounts.find(a => a.id === accountId);
       if (selectedAcc?.is_failed) {
-        setError('This account has breached its 10% trailing drawdown limit. No new trades allowed.');
+        setError('This account has breached its drawdown limit. No new trades allowed.');
         setLoading(false);
         return;
       }
     }
 
     const pnl = direction === 'long' ? (exit - entry) * sz : (entry - exit) * sz;
+
+    // Upload image if provided
+    let imageUrl: string | null = null;
+    if (imageFile) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const ext  = imageFile.name.split('.').pop();
+        const path = `${user.id}/${tradeDate}-${Date.now()}.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('trade-images')
+          .upload(path, imageFile, { cacheControl: '3600', upsert: false });
+        if (uploadErr) {
+          setError('Error al subir la imagen. Inténtalo de nuevo.');
+          setLoading(false);
+          return;
+        }
+        const { data: { publicUrl } } = supabase.storage
+          .from('trade-images')
+          .getPublicUrl(path);
+        imageUrl = publicUrl;
+      }
+    }
 
     const result = await onAdd({
       account_id:   accountId || null,
@@ -76,6 +125,7 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
       trade_date:   tradeDate,
       tags:         tags.length ? tags : null,
       notes:        notes || null,
+      image_url:    imageUrl,
     });
 
     if (result.error) {
@@ -202,6 +252,40 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
           value={notes}
           onChange={e => setNotes(e.target.value)}
         />
+      </div>
+
+      {/* Screenshot upload */}
+      <div>
+        <label className="label">
+          Screenshot <span className="text-muted-foreground">(opcional · JPG/PNG · máx. 2MB)</span>
+        </label>
+        {imagePreview ? (
+          <div className="relative inline-block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imagePreview} alt="Preview" className="h-32 rounded-lg border border-border object-cover" />
+            <button
+              type="button"
+              onClick={removeImage}
+              className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-destructive text-white text-xs flex items-center justify-center hover:opacity-80"
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <label className="flex items-center gap-3 px-4 py-3 rounded-lg border border-dashed border-border cursor-pointer hover:border-foreground transition-colors">
+            <svg className="w-5 h-5 text-muted-foreground shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="text-sm text-muted-foreground">Haz clic para subir una captura de pantalla</span>
+            <input
+              type="file"
+              accept="image/jpeg,image/png"
+              className="hidden"
+              onChange={handleImageChange}
+            />
+          </label>
+        )}
+        {imageError && <p className="text-destructive text-xs mt-1">{imageError}</p>}
       </div>
 
       {error && <p className="text-destructive text-sm">{error}</p>}
