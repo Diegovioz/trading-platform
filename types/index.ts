@@ -32,15 +32,17 @@ export interface Account {
   name: string;
   initial_capital: number;
   highest_equity: number;
-  drawdown_floor: number;   // always initial_capital * 0.90 — static, never moves
+  drawdown_floor: number;
   created_at: string;
+  drawdown_type: 'static' | 'trailing';
+  drawdown_percent: number;
   // computed client-side after fetching
   total_pnl: number;
   total_trades: number;
   current_balance: number;
-  is_failed: boolean;       // current_balance <= drawdown_floor
-  remaining_risk: number;   // current_balance - drawdown_floor
-  drawdown_used_pct: number; // 0–100: how much of the 10% max DD is consumed
+  is_failed: boolean;
+  remaining_risk: number;
+  drawdown_used_pct: number;
 }
 
 

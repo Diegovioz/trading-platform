@@ -8,8 +8,11 @@ interface DrawdownCardProps {
 }
 
 export default function DrawdownCard({ account: a }: DrawdownCardProps) {
-  const maxDD    = a.initial_capital * 0.10;
+  const maxDD    = a.drawdown_type === 'trailing'
+    ? a.highest_equity * (a.drawdown_percent / 100)
+    : a.initial_capital * (a.drawdown_percent / 100);
   const usedPct  = a.drawdown_used_pct;
+  const ddLabel  = `${a.drawdown_percent}% ${a.drawdown_type === 'trailing' ? 'Trailing' : 'Estático'}`;
 
   const barColor =
     usedPct >= 90 ? '#ef4444' :
@@ -22,7 +25,10 @@ export default function DrawdownCard({ account: a }: DrawdownCardProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className={`w-2.5 h-2.5 rounded-full ${a.is_failed ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
-          <h3 className="font-semibold text-sm">{a.name}</h3>
+          <div>
+            <h3 className="font-semibold text-sm">{a.name}</h3>
+            <span className="text-xs text-muted-foreground">{ddLabel}</span>
+          </div>
         </div>
         {a.is_failed ? (
           <span className="text-xs font-bold text-red-500 bg-red-500/15 px-2 py-0.5 rounded-full animate-pulse">
