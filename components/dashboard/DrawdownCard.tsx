@@ -8,11 +8,12 @@ interface DrawdownCardProps {
 }
 
 export default function DrawdownCard({ account: a }: DrawdownCardProps) {
-  const maxDD    = a.drawdown_type === 'trailing'
+  const isTrailing = a.drawdown_type === 'trailing';
+  const maxDD      = isTrailing
     ? a.highest_equity * (a.drawdown_percent / 100)
     : a.initial_capital * (a.drawdown_percent / 100);
-  const usedPct  = a.drawdown_used_pct;
-  const ddLabel  = `${a.drawdown_percent}% ${a.drawdown_type === 'trailing' ? 'Trailing' : 'Estático'}`;
+  const usedPct    = a.drawdown_used_pct;
+  const ddLabel    = `${a.drawdown_percent}% ${isTrailing ? 'Trailing' : 'Estático'}`;
 
   const barColor =
     usedPct >= 90 ? '#ef4444' :
@@ -44,8 +45,8 @@ export default function DrawdownCard({ account: a }: DrawdownCardProps) {
       {/* Progress bar */}
       <div>
         <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-          <span>Balance inicial</span>
-          <span>Máx. DD (estático)</span>
+          <span>{isTrailing ? 'Equity máx. alcanzado' : 'Balance inicial'}</span>
+          <span>Máx. DD ({isTrailing ? 'Trailing' : 'Estático'})</span>
         </div>
         <div className="relative h-3 bg-muted rounded-full overflow-hidden">
           <div
@@ -54,18 +55,27 @@ export default function DrawdownCard({ account: a }: DrawdownCardProps) {
           />
         </div>
         <div className="flex justify-between text-xs font-mono mt-1">
-          <span className="text-green-500">{formatCurrency(a.initial_capital)}</span>
+          <span className="text-green-500">
+            {formatCurrency(isTrailing ? a.highest_equity : a.initial_capital)}
+          </span>
           <span className="text-red-500">−{formatCurrency(maxDD)}</span>
         </div>
       </div>
 
       {/* Stats grid */}
-      <div className="grid grid-cols-3 gap-3 pt-1 border-t border-border">
+      <div className={`grid gap-3 pt-1 border-t border-border ${isTrailing ? 'grid-cols-4' : 'grid-cols-3'}`}>
         <Stat
           label="Balance actual"
           value={formatCurrency(a.current_balance)}
           color={a.current_balance >= a.initial_capital ? 'text-green-500' : 'text-red-500'}
         />
+        {isTrailing && (
+          <Stat
+            label="Equity máx."
+            value={formatCurrency(a.highest_equity)}
+            color="text-blue-400"
+          />
+        )}
         <Stat
           label="Mín. equity"
           value={formatCurrency(a.drawdown_floor)}
@@ -100,7 +110,7 @@ export default function DrawdownCard({ account: a }: DrawdownCardProps) {
           <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          El balance ha superado el límite de drawdown estático del 10%. No se permiten nuevas operaciones.
+          Balance ha superado el límite de drawdown {isTrailing ? 'trailing' : 'estático'} del {a.drawdown_percent}%. No se permiten nuevas operaciones.
         </div>
       )}
     </div>
