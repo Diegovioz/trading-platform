@@ -12,6 +12,7 @@ import EquityCurve from '@/components/dashboard/EquityCurve';
 import PnLChart from '@/components/dashboard/PnLChart';
 import DashboardFilters from '@/components/dashboard/DashboardFilters';
 import DrawdownCard from '@/components/dashboard/DrawdownCard';
+import ChallengeProgress from '@/components/dashboard/ChallengeProgress';
 
 interface Filters {
   from: string;
@@ -127,6 +128,20 @@ export default function DashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {accounts.map(acc => (
               <DrawdownCard key={acc.id} account={acc} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Challenge Progress */}
+      {!loading && !isAdmin && accounts.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+            Challenge Progress
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {accounts.map(acc => (
+              <ChallengeProgress key={acc.id} account={acc} trades={trades} />
             ))}
           </div>
         </div>

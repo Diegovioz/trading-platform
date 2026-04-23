@@ -36,6 +36,7 @@ export interface Account {
   created_at: string;
   drawdown_type: 'static' | 'trailing';
   drawdown_percent: number;
+  phase: 'phase1' | 'phase2' | 'funded';
   // computed client-side after fetching
   total_pnl: number;
   total_trades: number;

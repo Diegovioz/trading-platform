@@ -55,6 +55,7 @@ function enrichAccount(
     created_at:       String(raw.created_at),
     drawdown_type:    ddType,
     drawdown_percent: ddPercent,
+    phase:            (String(raw.phase || 'phase1')) as 'phase1' | 'phase2' | 'funded',
     total_pnl:        totalPnl,
     total_trades:     chronoTrades.length,
     current_balance:  balance,
