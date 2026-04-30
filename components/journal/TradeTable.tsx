@@ -1,9 +1,106 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { JournalTrade, TradeEvaluation } from '@/types';
 import { formatCurrency, formatDate, pnlColor } from '@/lib/utils';
 import { useCountdown, fmtCountdown } from '@/hooks/useCountdown';
+
+function TradeDetailModal({ trade, onClose }: { trade: JournalTrade; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const Field = ({ label, value, mono = false, className = '' }: { label: string; value?: string | number | null; mono?: boolean; className?: string }) => (
+    <div className="flex flex-col gap-1">
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</span>
+      <span className={`text-sm font-medium ${mono ? 'font-mono' : ''} ${className || 'text-foreground'}`}>
+        {value ?? '—'}
+      </span>
+    </div>
+  );
+
+  const daysLeft = trade.image_expires_at
+    ? Math.ceil((new Date(trade.image_expires_at).getTime() - Date.now()) / 86_400_000)
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative bg-background border border-border rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border sticky top-0 bg-background rounded-t-2xl">
+          <div className="flex items-center gap-2.5">
+            <span className="text-base font-bold">{trade.asset}</span>
+            <span className={trade.direction === 'long' ? 'tag-win' : 'tag-loss'}>
+              {trade.direction.toUpperCase()}
+            </span>
+            <span className={`text-sm font-bold font-mono ${pnlColor(trade.pnl)}`}>
+              {trade.pnl >= 0 ? '+' : ''}{formatCurrency(trade.pnl)}
+            </span>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Details grid */}
+        <div className="px-5 py-4 grid grid-cols-2 gap-x-6 gap-y-4">
+          <Field label="Date" value={formatDate(trade.trade_date)} />
+          <Field label="Size" value={trade.size} mono />
+          <Field label="Entry" value={trade.entry_price.toLocaleString()} mono />
+          <Field label="Exit" value={trade.exit_price.toLocaleString()} mono />
+          <Field label="Stop Loss" value={trade.stop_loss != null ? trade.stop_loss.toLocaleString() : null} mono />
+          <Field label="Take Profit" value={trade.take_profit != null ? trade.take_profit.toLocaleString() : null} mono />
+          <Field label="Net P&L" value={`${trade.pnl >= 0 ? '+' : ''}${formatCurrency(trade.pnl)}`} mono className={pnlColor(trade.pnl)} />
+          {trade.tags && trade.tags.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Tags</span>
+              <div className="flex flex-wrap gap-1">
+                {trade.tags.map(tag => <span key={tag} className="tag-neutral">{tag}</span>)}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Notes */}
+        <div className="px-5 pb-5">
+          <div className="border-t border-border pt-4 space-y-2">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Notes</span>
+            {trade.notes
+              ? <p className="text-sm leading-relaxed whitespace-pre-wrap">{trade.notes}</p>
+              : <p className="text-sm text-muted-foreground italic">No notes for this trade.</p>
+            }
+          </div>
+        </div>
+
+        {/* Screenshot */}
+        {trade.image_url && (
+          <div className="px-5 pb-5">
+            <div className="border-t border-border pt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Screenshot</span>
+                {daysLeft !== null && (
+                  <span className="text-[10px] text-muted-foreground">Expires in {daysLeft}d</span>
+                )}
+              </div>
+              <a href={trade.image_url} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={trade.image_url} alt="trade screenshot" className="w-full rounded-lg border border-border object-cover hover:opacity-90 transition-opacity" />
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface TradeTableProps {
   trades: JournalTrade[];
@@ -112,12 +209,13 @@ function EvalPanel({ ev, colSpan }: { ev: TradeEvaluation; colSpan: number }) {
 }
 
 export default function TradeTable({ trades, isAdmin = false, onDelete, evaluationMap = {}, onEvaluate, evalLimitAt }: TradeTableProps) {
-  const [filter, setFilter]         = useState('');
-  const [sortKey, setSortKey]       = useState<'trade_date' | 'pnl' | 'asset'>('trade_date');
-  const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
-  const [evaluating, setEvaluating] = useState<string | null>(null);
-  const [evalErrors, setEvalErrors] = useState<Record<string, string>>({});
-  const [expanded, setExpanded]     = useState<string | null>(null);
+  const [filter, setFilter]           = useState('');
+  const [sortKey, setSortKey]         = useState<'trade_date' | 'pnl' | 'asset'>('trade_date');
+  const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('desc');
+  const [evaluating, setEvaluating]   = useState<string | null>(null);
+  const [evalErrors, setEvalErrors]   = useState<Record<string, string>>({});
+  const [expanded, setExpanded]       = useState<string | null>(null);
+  const [selectedTrade, setSelectedTrade] = useState<JournalTrade | null>(null);
 
   const evalCountdown  = useCountdown(evalLimitAt, 24);
   const isEvalBlocked  = evalCountdown !== null;
@@ -217,7 +315,7 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                 const isExpanded  = expanded === trade.id;
 
                 return [
-                  <tr key={trade.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                  <tr key={trade.id} onClick={() => setSelectedTrade(trade)} className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer">
                     {isAdmin && (
                       <td className="px-4 py-3 text-xs text-muted-foreground">
                         {trade.profile?.full_name ?? trade.profile?.email ?? '—'}
@@ -249,7 +347,7 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                             ? Math.ceil((new Date(trade.image_expires_at).getTime() - Date.now()) / 86_400_000)
                             : null;
                           return (
-                            <div className="flex flex-col items-center gap-0.5 shrink-0">
+                            <div className="flex flex-col items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
                               <a href={trade.image_url} target="_blank" rel="noopener noreferrer" title="Ver captura">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={trade.image_url} alt="screenshot" className="w-8 h-8 rounded object-cover border border-border hover:opacity-80 transition-opacity" />
@@ -266,7 +364,7 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                     </td>
 
                     {showScore && (
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         {evaluation ? (
                           <div className="flex items-center gap-2">
                             <ScoreBadge score={evaluation.score} onClick={() => toggleExpand(trade.id)} />
@@ -304,7 +402,7 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
                     )}
 
                     {onDelete && (
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <button
                           onClick={() => onDelete(trade.id)}
                           className="text-muted-foreground hover:text-destructive transition-colors"
@@ -328,6 +426,10 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
           </tbody>
         </table>
       </div>
+
+      {selectedTrade && (
+        <TradeDetailModal trade={selectedTrade} onClose={() => setSelectedTrade(null)} />
+      )}
     </div>
   );
 }
