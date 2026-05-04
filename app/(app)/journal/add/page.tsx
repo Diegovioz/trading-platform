@@ -3,10 +3,12 @@
 import AddTradeForm from '@/components/journal/AddTradeForm';
 import { useTrades } from '@/hooks/useTrades';
 import { useAccounts } from '@/hooks/useAccounts';
+import { useNoTradeDays } from '@/hooks/useNoTradeDays';
 
 export default function AddTradePage() {
   const { addTrade } = useTrades();
   const { accounts } = useAccounts();
+  const { addNoTradeDay } = useNoTradeDays();
 
   return (
     <div className="p-8 space-y-6 max-w-3xl">
@@ -16,7 +18,7 @@ export default function AddTradePage() {
       </div>
 
       <div className="card">
-        <AddTradeForm onAdd={addTrade} accounts={accounts} />
+        <AddTradeForm onAdd={addTrade} onAddNoTradeDay={addNoTradeDay} accounts={accounts} />
       </div>
     </div>
   );

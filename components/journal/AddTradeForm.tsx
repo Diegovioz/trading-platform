@@ -8,15 +8,26 @@ import type { JournalTrade, Account } from '@/types';
 
 const ASSETS = ['NQ', 'BTC', 'ETH', 'XAUUSD', 'NVDA', 'SOFI', 'TSLA'];
 const PRESET_TAGS = ['Breakout', 'Reversal', 'Trend', 'News', 'Scalp', 'Swing', 'FOMO', 'Overtraded'];
+const NO_TRADE_REASONS = ['Sin setup claro', 'Reglas Orion', 'Mercado cerrado', 'Alta volatilidad / noticias', 'Disciplina', 'Revisión / estudio'];
 
 interface AddTradeFormProps {
   onAdd: (trade: Omit<JournalTrade, 'id' | 'user_id' | 'created_at' | 'profile'>) => Promise<{ error?: string }>;
+  onAddNoTradeDay?: (day: { date: string; reason: string | null }) => Promise<{ error?: string }>;
   accounts?: Account[];
 }
 
-export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps) {
+export default function AddTradeForm({ onAdd, onAddNoTradeDay, accounts = [] }: AddTradeFormProps) {
   const router  = useRouter();
   const supabase = createClient();
+
+  const [mode, setMode] = useState<'trade' | 'no-trade'>('trade');
+
+  // No-trade-day state
+  const [noTradeDate,   setNoTradeDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [noTradeReason, setNoTradeReason] = useState('');
+  const [noTradeCustom, setNoTradeCustom] = useState('');
+  const [noTradeLoading, setNoTradeLoading] = useState(false);
+  const [noTradeError,   setNoTradeError]   = useState('');
 
   const [accountId,   setAccountId]   = useState<string>('');
   const [asset,       setAsset]       = useState('NQ');
@@ -156,8 +167,96 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
     }
   }
 
+  async function handleNoTradeSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!onAddNoTradeDay) return;
+    setNoTradeLoading(true);
+    setNoTradeError('');
+    const reason = noTradeCustom.trim() || noTradeReason || null;
+    const result = await onAddNoTradeDay({ date: noTradeDate, reason });
+    if (result.error) {
+      setNoTradeError(result.error);
+      setNoTradeLoading(false);
+    } else {
+      router.push('/journal');
+    }
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl">
+    <div className="space-y-6 max-w-2xl">
+      {/* Mode toggle */}
+      <div className="flex gap-2 p-1 bg-muted/30 rounded-xl border border-border w-fit">
+        {(['trade', 'no-trade'] as const).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              mode === m ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {m === 'trade' ? 'Registrar trade' : 'No operé hoy'}
+          </button>
+        ))}
+      </div>
+
+    {mode === 'no-trade' ? (
+      <form onSubmit={handleNoTradeSubmit} className="space-y-5">
+        <p className="text-sm text-muted-foreground">
+          Registra un día sin operar para mantener tu journal completo.
+        </p>
+
+        <div>
+          <label className="label">Fecha</label>
+          <input
+            type="date"
+            className="input"
+            value={noTradeDate}
+            onChange={e => setNoTradeDate(e.target.value)}
+            required
+          />
+        </div>
+
+        <div>
+          <label className="label">Motivo <span className="text-muted-foreground">(opcional)</span></label>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {NO_TRADE_REASONS.map(r => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => { setNoTradeReason(prev => prev === r ? '' : r); setNoTradeCustom(''); }}
+                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors border ${
+                  noTradeReason === r
+                    ? 'bg-primary/20 border-primary text-primary'
+                    : 'border-border text-muted-foreground hover:border-foreground'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            className="input"
+            placeholder="O escribe un motivo personalizado…"
+            value={noTradeCustom}
+            onChange={e => { setNoTradeCustom(e.target.value); setNoTradeReason(''); }}
+          />
+        </div>
+
+        {noTradeError && <p className="text-destructive text-sm">{noTradeError}</p>}
+
+        <div className="flex gap-3">
+          <button type="submit" disabled={noTradeLoading} className="btn-primary">
+            {noTradeLoading ? 'Guardando…' : 'Guardar día sin trade'}
+          </button>
+          <button type="button" onClick={() => router.push('/journal')} className="btn-ghost">
+            Cancelar
+          </button>
+        </div>
+      </form>
+    ) : (
+    <form onSubmit={handleSubmit} className="space-y-6">
       {/* Account */}
       {accounts.length > 0 && (
         <div>
@@ -322,5 +421,7 @@ export default function AddTradeForm({ onAdd, accounts = [] }: AddTradeFormProps
         </button>
       </div>
     </form>
+    )}
+    </div>
   );
 }

@@ -5,11 +5,13 @@ import TradeTable from '@/components/journal/TradeTable';
 import { useTrades } from '@/hooks/useTrades';
 import { useProfile } from '@/hooks/useProfile';
 import { useCoach } from '@/hooks/useCoach';
+import { useNoTradeDays } from '@/hooks/useNoTradeDays';
 
 export default function JournalPage() {
   const { isAdmin } = useProfile();
   const { trades, loading, error, deleteTrade } = useTrades({ isAdmin });
   const { evaluationMap, evaluateTrade, lastEvalAt } = useCoach();
+  const { noTradeDays, deleteNoTradeDay } = useNoTradeDays();
 
   return (
     <div className="p-8 space-y-6">
@@ -41,6 +43,8 @@ export default function JournalPage() {
           evaluationMap={evaluationMap}
           onEvaluate={evaluateTrade}
           evalLimitAt={lastEvalAt}
+          noTradeDays={noTradeDays}
+          onDeleteNoTradeDay={deleteNoTradeDay}
         />
       )}
     </div>

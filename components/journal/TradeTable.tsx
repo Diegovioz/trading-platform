@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { JournalTrade, TradeEvaluation } from '@/types';
+import type { JournalTrade, TradeEvaluation, NoTradeDay } from '@/types';
 import { formatCurrency, formatDate, pnlColor } from '@/lib/utils';
 import { useCountdown, fmtCountdown } from '@/hooks/useCountdown';
 
@@ -102,6 +102,10 @@ function TradeDetailModal({ trade, onClose }: { trade: JournalTrade; onClose: ()
   );
 }
 
+type TableRow =
+  | { type: 'trade';    data: JournalTrade }
+  | { type: 'no-trade'; data: NoTradeDay };
+
 interface TradeTableProps {
   trades: JournalTrade[];
   isAdmin?: boolean;
@@ -109,6 +113,8 @@ interface TradeTableProps {
   evaluationMap?: Record<string, TradeEvaluation>;
   onEvaluate?: (tradeId: string) => Promise<{ error?: string }>;
   evalLimitAt?: string | null;
+  noTradeDays?: NoTradeDay[];
+  onDeleteNoTradeDay?: (id: string) => void;
 }
 
 interface EvalDetail {
@@ -208,7 +214,7 @@ function EvalPanel({ ev, colSpan }: { ev: TradeEvaluation; colSpan: number }) {
   );
 }
 
-export default function TradeTable({ trades, isAdmin = false, onDelete, evaluationMap = {}, onEvaluate, evalLimitAt }: TradeTableProps) {
+export default function TradeTable({ trades, isAdmin = false, onDelete, evaluationMap = {}, onEvaluate, evalLimitAt, noTradeDays = [], onDeleteNoTradeDay }: TradeTableProps) {
   const [filter, setFilter]           = useState('');
   const [sortKey, setSortKey]         = useState<'trade_date' | 'pnl' | 'asset'>('trade_date');
   const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('desc');
@@ -264,6 +270,15 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
   const showScore  = !!onEvaluate;
   const baseColCount = (isAdmin ? 1 : 0) + 9 + (showScore ? 1 : 0) + (onDelete ? 1 : 0);
 
+  const rows: TableRow[] = [
+    ...filtered.map(t => ({ type: 'trade' as const, data: t })),
+    ...noTradeDays.map(d => ({ type: 'no-trade' as const, data: d })),
+  ].sort((a, b) => {
+    const aDate = a.type === 'trade' ? a.data.trade_date : a.data.date;
+    const bDate = b.type === 'trade' ? b.data.trade_date : b.data.date;
+    return bDate.localeCompare(aDate);
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -301,14 +316,47 @@ export default function TradeTable({ trades, isAdmin = false, onDelete, evaluati
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {rows.length === 0 ? (
               <tr>
                 <td colSpan={baseColCount} className="text-center py-12 text-muted-foreground">
                   No trades found.
                 </td>
               </tr>
             ) : (
-              filtered.flatMap(trade => {
+              rows.flatMap(row => {
+                if (row.type === 'no-trade') {
+                  const d = row.data;
+                  return [
+                    <tr key={`ntd-${d.id}`} className="border-b border-border/50 bg-muted/10">
+                      <td colSpan={baseColCount} className="px-4 py-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-muted/50 text-muted-foreground border border-border/60 uppercase tracking-wide">
+                              Sin trade
+                            </span>
+                            <span className="text-xs text-muted-foreground">{formatDate(d.date)}</span>
+                            {d.reason && (
+                              <span className="text-xs text-muted-foreground">— {d.reason}</span>
+                            )}
+                          </div>
+                          {onDeleteNoTradeDay && (
+                            <button
+                              onClick={() => onDeleteNoTradeDay(d.id)}
+                              className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                              title="Eliminar"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>,
+                  ];
+                }
+
+                const trade = row.data;
                 const evaluation  = evaluationMap[trade.id];
                 const isEvaluating = evaluating === trade.id;
                 const evalError   = evalErrors[trade.id];

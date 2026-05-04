@@ -55,6 +55,14 @@ export interface Profile {
   created_at: string;
 }
 
+export interface NoTradeDay {
+  id: string;
+  user_id: string;
+  date: string; // "YYYY-MM-DD"
+  reason: string | null;
+  created_at: string;
+}
+
 export interface JournalTrade {
   id: string;
   user_id: string;
