@@ -14,3 +14,7 @@ CREATE POLICY "Users manage own no-trade days"
   ON no_trade_days FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
+
+-- Required from May 30 2026: explicit grants for Data API access
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.no_trade_days TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.no_trade_days TO service_role;
