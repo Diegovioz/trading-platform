@@ -55,6 +55,52 @@ export interface Profile {
   created_at: string;
 }
 
+export type ProjectionStatus =
+  | 'Revisión normal'
+  | 'Candidato a escalar'
+  | 'Bajo observación'
+  | 'En proceso de salida';
+
+export type BurnOutcome = 'Reinstaurar' | 'Degradar' | 'Salida';
+export type ObservationType = 'positive' | 'neutral' | 'negative';
+
+export interface TraderProjection {
+  id: string;
+  trader_id: string;
+  profile_type: number; // 0–3
+  capital_usd: number;
+  split_trader: number;
+  split_vm: number;
+  months_history: number;
+  adj_high: number;  // –3 to +3
+  adj_neg: number;
+  adj_freq: number;
+  adj_cons: number;
+  status: ProjectionStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TraderObservation {
+  id: string;
+  trader_id: string;
+  type: ObservationType;
+  content: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface BurnEvent {
+  id: string;
+  trader_id: string;
+  event_date: string;
+  reason: string;
+  outcome: BurnOutcome;
+  notes: string | null;
+  created_by: string;
+  created_at: string;
+}
+
 export interface NoTradeDay {
   id: string;
   user_id: string;
