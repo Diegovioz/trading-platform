@@ -50,14 +50,23 @@ export async function evaluateTrade(
       ? `Tags: ${(trade.tags as string[]).join(', ')}` : null,
   ].filter(Boolean).join('\n');
 
+  const promptText = `Estrategia del usuario:\n${strategy}\n\nTrade:\n${tradeSummary}\n\nEvalúa según adherencia a la estrategia, gestión del riesgo y calidad de ejecución.\nReglas: no infles la puntuación, sé directo, respuesta corta.\nIMPORTANTE sobre R:R: una desviación de ±0.10 respecto al objetivo es completamente aceptable — NO la penalices (ej: objetivo 2R, rango válido 1.90–2.10).\n${trade.image_url ? 'Se adjunta captura del gráfico — úsala para evaluar la calidad técnica del setup.' : 'No se ha proporcionado captura del gráfico — no evalúes ni penalices aspectos técnicos del setup (toma de liquidez, estructura, etc.) que no estén descritos explícitamente en las notas.'}\n\nDevuelve JSON:\n{"score":number,"breakdown":{"strategy_adherence":number,"risk_management":number,"execution":number},"mistakes":["máx 3"],"strengths":["máx 3"],"feedback":"máx 60 palabras"}`;
+
+  const userMessage = trade.image_url
+    ? {
+        role: 'user' as const,
+        content: [
+          { type: 'image' as const, source: { type: 'url' as const, url: trade.image_url as string } },
+          { type: 'text' as const, text: promptText },
+        ],
+      }
+    : { role: 'user' as const, content: promptText };
+
   const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 500,
+    model: 'claude-sonnet-4-6',
+    max_tokens: 800,
     system: 'Eres un coach de trading de élite. Sé estricto, objetivo y conciso. Responde SIEMPRE en español. Devuelve ÚNICAMENTE JSON válido — sin markdown.',
-    messages: [{
-      role: 'user',
-      content: `Estrategia del usuario:\n${strategy}\n\nTrade:\n${tradeSummary}\n\nEvalúa según adherencia a la estrategia, gestión del riesgo y calidad de ejecución.\nReglas: no infles la puntuación, sé directo, respuesta corta.\n\nDevuelve JSON:\n{"score":number,"breakdown":{"strategy_adherence":number,"risk_management":number,"execution":number},"mistakes":["máx 3"],"strengths":["máx 3"],"feedback":"máx 60 palabras"}`,
-    }],
+    messages: [userMessage],
   });
 
   const rawText = (message.content[0] as { type: string; text: string }).text.trim();
